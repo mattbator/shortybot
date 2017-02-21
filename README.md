@@ -1,0 +1,2 @@
+# shortybot
+shorty-slackbot
