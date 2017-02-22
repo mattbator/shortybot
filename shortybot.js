@@ -154,8 +154,6 @@ controller.hears(['shorten (.*) (.*)','shorten (.*)'], 'direct_message,direct_me
     oldLink = JSON.stringify(oldLink);
     var oldLinkObj = JSON.parse(oldLink);
     
-    //Add URL and slashtag validation
-    
     request({
         uri: 'https://api.rebrandly.com/v1/links',
         method: "POST",
@@ -179,7 +177,7 @@ controller.hears(['shorten (.*) (.*)','shorten (.*)'], 'direct_message,direct_me
     		 	dm.say(newLink.shortUrl+' - Link ID - ' +newLink.id+'\n @shorty clicks '+newLink.id+' - _Tells you how many times your shortened link has been clicked_\n @shorty delete '+newLink.id+' - _Deletes your shortened link_');
 			 });
            } else {
-             bot.reply(message,'*Beep boop!* Uh-oh, friend! Looks like there\'s an error that @matt hasn\'t sorted out yet! Could be your link already exists or your slashtag contains invalid characters like Jon Kohler emojis!');
+             bot.reply(message,'*Beep boop!* Uh-oh, friend! Looks like there\'s an error that @matt hasn\'t handled yet! Most likely your Slashtag already exists, you used a bogus link, or you got cute and tried to add :jonkohler: emojis!');
            }
       })
 });
@@ -187,8 +185,6 @@ controller.hears(['shorten (.*) (.*)','shorten (.*)'], 'direct_message,direct_me
 controller.hears(['delete (.*)'], 'direct_message,direct_mention,mention', function(bot, message) {
     var linkId = message.match[1];
    
-    //Add validation
-    
     request({
         uri: 'https://api.rebrandly.com/v1/links/'+linkId,
         method: 'GET',
@@ -243,8 +239,6 @@ controller.hears(['delete (.*)'], 'direct_message,direct_mention,mention', funct
 
 controller.hears(['info (.*)','clicks (.*)'], 'direct_message,direct_mention,mention', function(bot, message) {
     var linkId = message.match[1];
-    
-    //Add validation
     
     request({
         uri: 'https://api.rebrandly.com/v1/links/'+linkId,
