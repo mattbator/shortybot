@@ -76,26 +76,12 @@ var bot = controller.spawn({
     token: process.env.SLACK_TOKEN
 }).startRTM();
 
-controller.hears(['hello','hi','hey','what\'s up','whaddup'], 'direct_message,direct_mention,mention', function(bot, message) {
+controller.hears(['kate reed','kreed'], 'direct_message,direct_mention,mention', function(bot, message) {
+    bot.reply(message,'http://gph.is/1SQusZM');
+});
 
-    bot.api.reactions.add({
-        timestamp: message.ts,
-        channel: message.channel,
-        name: 'robot_face',
-    }, function(err, res) {
-        if (err) {
-            bot.botkit.log('Failed to add emoji reaction :(', err);
-        }
-    });
-
-
-    controller.storage.users.get(message.user, function(err, user) {
-        if (user && user.name) {
-            bot.reply(message, 'Hello ' + user.name + '!!');
-        } else {
-            bot.reply(message, 'Long time, no talk!');
-        }
-    });
+controller.hears(['peter brass','brass'], 'direct_message,direct_mention,mention', function(bot, message) {
+    bot.reply(message,'https://media2.giphy.com/media/ooG93rZFlcAk8/giphy.gif');
 });
 
 /*controller.hears(['call me (.*)', 'my name is (.*)'], 'direct_message,direct_mention,mention', function(bot, message) {
@@ -240,9 +226,10 @@ controller.hears(['shorten (.*) (.*)','shorten (.*)'], 'direct_message,direct_me
       }, function(err, response, body) {
            if (!err && response.statusCode == 200) {
              var newLink = JSON.parse(body);
-             bot.reply(message,':tada: It worked! Your new short URL is: http://'+newLink.shortUrl+'\n\n \
-             @shorty clicks '+newLink.id+' - _Tells you how many times your shortened link has been clicked_\n \
-             @shorty delete '+newLink.id+' - _Deletes your shortened link_');
+             bot.reply(message,':tada: Your new short URL is: http://'+newLink.shortUrl+' :tada:');
+			 bot.startPrivateConversation(message,function(err,dm) {
+    		 	dm.say(newLink.shortUrl+' - Link ID - ' +newLink.id+'\n @shorty clicks '+newLink.id+' - _Tells you how many times your shortened link has been clicked_\n @shorty delete '+newLink.id+' - _Deletes your shortened link_');
+			 });
            } else {
              bot.reply(message,'*Beep boop!* Uh-oh, friend! Looks like there\'s an error that @matt hasn\'t sorted out yet! Could be your link already exists or your slashtag contains invalid characters like Jon Kohler emojis!');
            }
@@ -338,15 +325,82 @@ controller.hears(['help'], 'direct_message,direct_mention,mention', function(bot
        4. @shorty clicks <Link ID> - _How many times has a ntnx.tips link been clicked_');
 });
 
+controller.hears(['get shorty'], 'direct_message,direct_mention,mention', function(bot, message) {
+	var randQuote = { 
+		0:'_Now I\'ve been shot at three times before. Twice on purpose and once by accident. And I\'m still here. And I\'m gonna be here for as long as I want to be._', 
+		1:'_I\'m not gonna say any more than I have to, if that._',
+		2:'I\'m just a :robot_face:, but if I had a car it would totally be the Cadillac of minivans.',
+		3:'_I think you oughta turn around and go back to Miami._',
+		}
+    bot.reply(message,pickRandomProperty(randQuote));
+});
+
+controller.hears(['get down'], 'direct_message,direct_mention,mention', function(bot, message) {
+    bot.reply(message,'https://media3.giphy.com/media/10SFlDV4sry9Ow/giphy.gif');
+});
+
+controller.hears(['go','birthday'], 'direct_message,direct_mention,mention', function(bot, message) {
+    bot.reply(message,'http://gph.is/2dtpUZf');
+    var randGif = { 
+		0:'http://gph.is/2dtpUZf', 
+		1:'https://media4.giphy.com/media/l4KhS0BOFBhU2SYIU/giphy.gif',
+		2:'https://media0.giphy.com/media/nTb2dakirsu88/giphy.gif',
+		3:'https://media2.giphy.com/media/s2qXK8wAvkHTO/giphy.gif'
+		}
+    bot.reply(message,pickRandomProperty(randGif));
+});
+
+controller.hears(['fuck you'], 'direct_message,direct_mention,mention', function(bot, message) {
+	var randGif = { 
+		0:'https://media1.giphy.com/media/3oz8xRd39FNNdzZjGw/giphy.gif', 
+		1:'https://media3.giphy.com/media/tfzw8nJe6FPFK/giphy.gif',
+		2:'https://media3.giphy.com/media/ywtJsowFklRvO/giphy.gif',
+		3:'https://media3.giphy.com/media/uu1tMLrHG0Uj6/giphy.gif',
+		4:'https://media4.giphy.com/media/oyXs9oXayW3FS/giphy.gif',
+		5:'https://media0.giphy.com/media/BMIjBCRvZUS76/giphy.gif'
+		}
+    bot.reply(message,pickRandomProperty(randGif));
+});
+
 controller.hears(['look like','look familiar'], 'direct_message,direct_mention,mention', function(bot, message) {
     bot.reply(message,'My mother was a cyborg, and I never met my father, but I heard he was some hotshot sales manager in Fed back in the day.');
 });
 
-controller.hears(['identify yourself', 'who are you', 'what is your name','what is your purpose'],
+controller.hears(['identify yourself', 'who are you', 'what is your name','what is your purpose','what do you do'],
     'direct_message,direct_mention,mention', function(bot, message) {
 
         bot.reply(message,
             ':robot_face: I am a bot named <@' + bot.identity.name +
              '>. _I came here to crush beers and shorten links, and I\'m all out of beers._ \n\n DM @shorty \'help\' to learn more!');
+});
 
+controller.hears(['hello','hi','hey'], 'direct_message,direct_mention,mention', function(bot, message) {
+
+    bot.api.reactions.add({
+        timestamp: message.ts,
+        channel: message.channel,
+        name: 'robot_face',
+    }, function(err, res) {
+        if (err) {
+            bot.botkit.log('Failed to add emoji reaction :(', err);
+        }
     });
+
+
+    controller.storage.users.get(message.user, function(err, user) {
+        if (user && user.name) {
+            bot.reply(message, 'Hello ' + user.name + '!!');
+        } else {
+            bot.reply(message, 'Hi! Long time, no talk!');
+        }
+    });
+});
+
+function pickRandomProperty(obj) {
+    var result;
+    var count = 0;
+    for (var prop in obj)
+        if (Math.random() < 1/++count)
+           result = prop;
+    return obj[result];
+}
