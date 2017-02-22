@@ -63,24 +63,21 @@ This bot demonstrates many of the core features of Botkit:
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
-
-if (!process.env.token) {
-    console.log('Error: Specify token in environment');
-    process.exit(1);
-}
+var dotenv = require('dotenv');
+dotenv.load();
 
 var Botkit = require('./lib/Botkit.js');
-var os = require('os');
+var request = require('request')
 
 var controller = Botkit.slackbot({
-    debug: true,
+    debug: false,
 });
 
 var bot = controller.spawn({
-    token: process.env.token
+    token: process.env.SLACK_TOKEN
 }).startRTM();
 
-controller.hears(['hello', 'hi'], 'direct_message,direct_mention,mention', function(bot, message) {
+controller.hears(['hello','hi','hey','what\'s up','whaddup'], 'direct_message,direct_mention,mention', function(bot, message) {
 
     bot.api.reactions.add({
         timestamp: message.ts,
@@ -97,12 +94,12 @@ controller.hears(['hello', 'hi'], 'direct_message,direct_mention,mention', funct
         if (user && user.name) {
             bot.reply(message, 'Hello ' + user.name + '!!');
         } else {
-            bot.reply(message, 'Hello.');
+            bot.reply(message, 'Long time, no talk!');
         }
     });
 });
 
-controller.hears(['call me (.*)', 'my name is (.*)'], 'direct_message,direct_mention,mention', function(bot, message) {
+/*controller.hears(['call me (.*)', 'my name is (.*)'], 'direct_message,direct_mention,mention', function(bot, message) {
     var name = message.match[1];
     controller.storage.users.get(message.user, function(err, user) {
         if (!user) {
@@ -211,35 +208,146 @@ controller.hears(['shutdown'], 'direct_message,direct_mention,mention', function
         }
         ]);
     });
+});*/
+
+controller.hears(['shorten (.*) (.*)','shorten (.*)'], 'direct_message,direct_mention,mention', function(bot, message) {
+    var oldLink = message.match[1];
+    var tag = message.match[2];
+    
+    //Parse out hyperlink text from Slack message
+    oldLink = oldLink.replace('<','');
+    oldLink = oldLink.replace('>','');
+    oldLink = oldLink.split('|');
+    oldLink = JSON.stringify(oldLink);
+    var oldLinkObj = JSON.parse(oldLink);
+    
+    //Add URL and slashtag validation
+    
+    request({
+        uri: 'https://api.rebrandly.com/v1/links',
+        method: "POST",
+        body: JSON.stringify({
+          destination: oldLinkObj[0]
+           , slashtag: tag
+           , description: oldLinkObj[0]
+           , domain: {
+             id:process.env.DOMAIN_ID
+           }
+        }),
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey':process.env.REBRANDLY_API
+        }
+      }, function(err, response, body) {
+           if (!err && response.statusCode == 200) {
+             var newLink = JSON.parse(body);
+             bot.reply(message,':tada: It worked! Your new short URL is: http://'+newLink.shortUrl+'\n\n \
+             @shorty clicks '+newLink.id+' - _Tells you how many times your shortened link has been clicked_\n \
+             @shorty delete '+newLink.id+' - _Deletes your shortened link_');
+           } else {
+             bot.reply(message,'*Beep boop!* Uh-oh, friend! Looks like there\'s an error that @matt hasn\'t sorted out yet! Could be your link already exists or your slashtag contains invalid characters like Jon Kohler emojis!');
+           }
+      })
 });
 
+controller.hears(['delete (.*)'], 'direct_message,direct_mention,mention', function(bot, message) {
+    var linkId = message.match[1];
+   
+    //Add validation
+    
+    request({
+        uri: 'https://api.rebrandly.com/v1/links/'+linkId,
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey':process.env.REBRANDLY_API
+        }
+      }, function(err, response, body) {
+           if (!err && response.statusCode == 200) {
+             var link = JSON.parse(body);
+             
+             bot.startConversation(message, function(err, convo) {
+               convo.ask('Are you *sure* you want to delete http://'+link.shortUrl+', which redirects to '+link.destination+'?', [
+               {
+                pattern: bot.utterances.yes,
+                callback: function(response, convo) {
+                	request({
+        				uri: 'https://api.rebrandly.com/v1/links/'+linkId,
+        				method: 'DELETE',
+        				headers: {
+          					'Content-Type': 'application/json',
+          					'apikey':process.env.REBRANDLY_API
+        				}
+      					}, function(err, response, body) {
+           					if (!err && response.statusCode == 200) {
+             					var link = JSON.parse(body);
+             					convo.say(':skull_and_crossbones: http://'+link.shortUrl+' has been deleted. I hope you\'re happy.');
+                    			convo.next();
+           					} else {
+             					convo.say('*Beep boop!* Uh-oh, friend! Looks like that link ID doesn\'t exist!');
+           						convo.next();
+           }
+      })
+                }
+                },
+                {
+                pattern: bot.utterances.no,
+                default: true,
+                callback: function(response, convo) {
+                convo.say('Beep boop! That was a close one!');
+                convo.next();
+            }
+        }
+        ]);
+    });
+             
+           } else {
+             bot.reply(message,'*Beep boop!* Uh-oh, friend! Looks like that link ID doesn\'t exist!');
+           }
+      })
+});
 
-controller.hears(['uptime', 'identify yourself', 'who are you', 'what is your name'],
+controller.hears(['info (.*)','clicks (.*)'], 'direct_message,direct_mention,mention', function(bot, message) {
+    var linkId = message.match[1];
+    
+    //Add validation
+    
+    request({
+        uri: 'https://api.rebrandly.com/v1/links/'+linkId,
+        method: "GET",
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey':process.env.REBRANDLY_API
+        }
+      }, function(err, response, body) {
+           if (!err && response.statusCode == 200) {
+             var link = JSON.parse(body);
+             var created = new Date(link.createdAt)
+             bot.reply(message,'http://'+link.shortUrl+' has been clicked '+link.clicks+' times since it was created on '+created);
+           } else {
+             bot.reply(message,'*Beep boop!* Uh-oh, friend! Looks like that link ID doesn\'t exist!');
+           }
+      })
+});
+
+controller.hears(['help'], 'direct_message,direct_mention,mention', function(bot, message) {
+    bot.reply(message,':robot_face:*Beep boop! I\'m a bot that helps you to shorten links!*\n\n \
+       I hope to learn lots of totally sweet tricks one day, in the meantime you should find these commands useful: \n\n \
+       1. @shorty shorten <Ugly Long URL> - _Creates a ntnx.tips URL with a short, random Slashtag e.g. ntnx.tips/rngg_ \n \
+       2. @shorty shorten <Ugly Long URL> <Slashtag> - _Creates a ntnx.tips URL with a sweet, custom Slashtag e.g. ntnx.tips/MattRocks_ \n \
+       3. @shorty delete <Link ID> - _Deletes a ntnx.tips link_ \n \
+       4. @shorty clicks <Link ID> - _How many times has a ntnx.tips link been clicked_');
+});
+
+controller.hears(['look like','look familiar'], 'direct_message,direct_mention,mention', function(bot, message) {
+    bot.reply(message,'My mother was a cyborg, and I never met my father, but I heard he was some hotshot sales manager in Fed back in the day.');
+});
+
+controller.hears(['identify yourself', 'who are you', 'what is your name','what is your purpose'],
     'direct_message,direct_mention,mention', function(bot, message) {
-
-        var hostname = os.hostname();
-        var uptime = formatUptime(process.uptime());
 
         bot.reply(message,
             ':robot_face: I am a bot named <@' + bot.identity.name +
-             '>. I have been running for ' + uptime + ' on ' + hostname + '.');
+             '>. _I came here to crush beers and shorten links, and I\'m all out of beers._ \n\n DM @shorty \'help\' to learn more!');
 
     });
-
-function formatUptime(uptime) {
-    var unit = 'second';
-    if (uptime > 60) {
-        uptime = uptime / 60;
-        unit = 'minute';
-    }
-    if (uptime > 60) {
-        uptime = uptime / 60;
-        unit = 'hour';
-    }
-    if (uptime != 1) {
-        unit = unit + 's';
-    }
-
-    uptime = uptime + ' ' + unit;
-    return uptime;
-}
