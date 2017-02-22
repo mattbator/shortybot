@@ -63,8 +63,7 @@ This bot demonstrates many of the core features of Botkit:
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
-var dotenv = require('dotenv');
-dotenv.load();
+require('dotenv').config({path:__dirname + '/.env'});
 
 var Botkit = require('./lib/Botkit.js');
 var request = require('request')
