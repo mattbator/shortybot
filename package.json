@@ -8,6 +8,7 @@
     "back": "^1.0.1",
     "body-parser": "^1.14.2",
     "botbuilder": "^3.2.3",
+    "botkit-storage-mongo":"^1.0.4",
     "botkit-studio-sdk": "^1.0.0",
     "ciscospark": "^0.7.31",
     "clone": "2.0.0",
