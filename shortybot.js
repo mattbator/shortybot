@@ -33,7 +33,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
 
   var controller = Botkit.slackbot({
     //storage: mongoStorage,
-    debug: false,
+    debug: true,
   });
 
   var bot = controller.spawn({
@@ -87,12 +87,10 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
             'userid': message.user,
             'linkid': newLink.id
           };
-          collection.insert(record, {
-            w: 1
-          }, function(err, result) {
+          collection.insert(record, {w: 1}, function(err, result) {
             if (err) {
-              //should probably message @matt or something, could be a db issue
-              console.log('Fuckkkkkk - failed to insert new link record into db.');
+              bot.reply(message, '*Beep boop!* Hey will someone tell @matt that I just failed to enter that link into the database?\n*ERROR:* ' + err);
+              console.log('ERROR: ' + err);
             }
           });
         } else {
@@ -111,14 +109,14 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
       'slashid': slashId
     }, function(err, item) {
       if (item == null) {
-        bot.reply(message, '*Beep boop!* Uh-oh, friend! Looks like the Slashtag \"' + slashId + '\" doesn\'t exist!\n ERROR: ' + err);
+        bot.reply(message, '*Beep boop!* Uh-oh, friend! Looks like the Slashtag \"' + slashId + '\" doesn\'t exist!\n*ERROR:* ' + err);
       } else if (item.userid !== message.user) {
         bot.reply(message, '*Beep boop!* Uh-oh, friend! Looks like that link isn\'t yours to delete! Maybe go talk to @matt.');
       } else {
 
         linkGet(item.linkid, function(err, link) {
           if (err) {
-            bot.reply(message, '*Beep boop!* Uh-oh, friend! Looks like the Slashtag \"' + slashId + '\" doesn\'t exist!\n ERROR: ' + err);
+            bot.reply(message, '*Beep boop!* Uh-oh, friend! Looks like the Slashtag \"' + slashId + '\" doesn\'t exist!\n*ERROR:* ' + err);
           } else {
             bot.startConversation(message, function(err, convo) {
               convo.ask('Are you *sure* you want to delete http://' + link.shortUrl + ', which redirects to ' + link.destination + '?', [{
@@ -149,7 +147,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
                 pattern: bot.utterances.no,
                 default: true,
                 callback: function(response, convo) {
-                  convo.say('Beep boop! That was a close one!');
+                  convo.say('*Beep boop!* That was a close one!');
                   convo.next();
                 }
               }]);
@@ -162,54 +160,57 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
 
   controller.hears(['mylinks'], 'direct_message,direct_mention,mention', function(bot, message) {
     findLinks(message.user, function(err, items) {
-      if (items.length == 0) {
-        bot.reply(message, '*Beep boop!* Uh-oh, friend! Looks like I can\'t find any of your links! Maybe go talk to @matt.\n ERROR: ' + err);
-      } else {
-        var linklist = [];
+      bot.startPrivateConversation(message, function(err, dm) {
+        if (items.length == 0) {
+          dm.say('*Beep boop!* Uh-oh, friend! Looks like I can\'t find any of your links! Maybe go talk to @matt.\n*ERROR:* ' + err);
+        } else {
 
-        function looper(i) {
-          if (i < items.length) {
-            linkGet(items[i].linkid, function(err, link) {
-              if (err) {
-                console.log('ERROR: ' + err);
-              } else {
-                linklist.push(i + 1 + '.) http://' + link.shortUrl + '  :arrow_right:  ' + link.destination + '\n');
-                looper(i + 1);
+          var linksPerPage = 25;
+          function page(j) {
+            if (j < items.length) {
+              var linklist = [];
+
+              function looper(i) {
+                if (i < j + linksPerPage && i + j < items.length) {
+                  linkGet(items[i + j].linkid, function(err, link) {
+                    if (err) {
+                      dm.say('ERROR: ' + err);
+                      console.log('ERROR: ' + err);
+                    } else {
+                      linklist.push(i + j + 1 + '.) http://' + link.shortUrl + '  :arrow_right:  ' + link.destination + '\n');
+                      looper(i + 1);
+                    }
+                  })
+                } else {
+                  bot.startConversation(message, function(err, convo) {
+                    convo.say(linklist.join(''));
+                    if (i + j < items.length) {
+                      convo.ask('Display more links?', [{
+                        pattern: bot.utterances.yes,
+                        callback: function(response, convo) {
+                          convo.next();
+                          page(j + linksPerPage);
+                        }
+                      }, {
+                        pattern: bot.utterances.no,
+                        default: true,
+                        callback: function(response, convo) {
+                          convo.say('Cool, see you next time!');
+                          convo.next();
+                        }
+                      }]);
+                    }
+                  });
+
+                }
               }
-            })
-          } else {
-            bot.startPrivateConversation(message,function(err,dm) {
-              dm.say('*Beep boop!* Here are all of the shortened links I\'ve created for you. You\'re welcome.\n\n'+linklist.join(''));
-            });
-            //bot.reply(message, linklist.join(''));
+              looper(0);
+            }
           }
+          page(0);
+          dm.say('*Beep boop!* I\'ve shortened *' + items.length + '* links for you.\n\n');
         }
-        looper(0);
-      }
-    });
-  });
-
-  controller.hears(['info (.*)', 'clicks (.*)'], 'direct_message,direct_mention,mention', function(bot, message) {
-    var slashId = message.match[1].replace(/.*ntnx.tips\//, '');
-    slashId = slashId.replace('>', '');
-    slashId = slashId.replace('/', '');
-
-    collection.findOne({
-      'slashid': slashId
-    }, function(err, item) {
-      if (item == null) {
-        bot.reply(message, '*Beep boop!* Uh-oh, friend! Looks like the Slashtag \"' + slashId + '\" doesn\'t exist!\n ERROR: ' + err);
-      } else {
-
-        linkGet(item.linkid, function(err, link) {
-          if (err) {
-            bot.reply(message, '*Beep boop!* Uh-oh, friend! Looks like the Slashtag \"' + slashId + '\" doesn\'t exist!\n ERROR: ' + err);
-          } else {
-            var created = new Date(link.createdAt);
-            bot.reply(message, 'http://' + link.shortUrl + ' has been clicked ' + link.clicks + ' times since it was created on ' + created);
-          }
-        })
-      }
+      });
     });
   });
 
@@ -229,6 +230,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
       1: '_I\'m not gonna say any more than I have to, if that._',
       2: 'I\'m just a :robot_face:, but if I had a car it would totally be the Cadillac of minivans.',
       3: '_I think you oughta turn around and go back to Miami._',
+      4: '_@matt says that I\'m the Cadillac of Slackbots._',
     }
     bot.reply(message, pickRandomProperty(randQuote));
   });
@@ -319,7 +321,6 @@ function linkGet(id, callback) {
   }, function(err, response, body) {
     if (!err && response.statusCode == 200) {
       var link = JSON.parse(body);
-      console.log('I RETURNED 200 ' + link.shortUrl)
       callback(null, link);
     } else {
       callback(err);
