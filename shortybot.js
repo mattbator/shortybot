@@ -50,119 +50,183 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
 
   controller.hears(['shorten (.*) (.*)', 'shorten (.*)'], 'direct_message,direct_mention,mention', function(bot, message) {
     var oldLink = message.match[1];
-    var tag = message.match[2];
+    var slashId = message.match[2];
+
+    //Parse our any garbage around the tag
+    slashId = slashId.replace(/\W/g,'');
 
     //Parse out hyperlink text from Slack message
     oldLink = oldLink.replace('<', '');
     oldLink = oldLink.replace('>', '');
+    oldLink = oldLink.replace('\'', '');
+    oldLink = oldLink.replace('\"', '');
     oldLink = oldLink.split('|');
     oldLink = JSON.stringify(oldLink);
     var oldLinkObj = JSON.parse(oldLink);
 
-    //check to make sure we're not attempting to shorten an ntnx.tips link
-    if (oldLinkObj[0].includes('ntnx.tips')) {
-      bot.reply(message, ':rage: You know who else loves to shorten already shortened links?! ISIS. I hope you\'re proud of yourself.');
-    } else {
-      request({
-        uri: 'https://api.rebrandly.com/v1/links',
-        method: "POST",
-        body: JSON.stringify({
-          destination: oldLinkObj[0],
-          slashtag: tag,
-          description: oldLinkObj[0],
-          domain: {
-            id: process.env.DOMAIN_ID
-          }
-        }),
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': process.env.REBRANDLY_API
-        }
-      }, function(err, response, body) {
-        if (!err && response.statusCode == 200) {
-          var newLink = JSON.parse(body);
-          bot.reply(message, ':tada: Your new short URL is: http://' + newLink.shortUrl);
-          var record = {
-            'slashid': newLink.slashtag,
-            'userid': message.user,
-            'linkid': newLink.id
-          };
-          collection.insert(record, {w: 1}, function(err, result) {
-            if (err) {
-              bot.reply(message, '*Beep boop!* Hey will someone tell @matt that I just failed to enter that link into the database?\n*ERROR:* ' + err);
-              console.log('ERROR: ' + err);
-            }
-          });
-        } else {
-          bot.reply(message, '*Beep boop!* Uh-oh, friend! I couldn\'t shorten your link! Most likely another user created a link with that Slashtag, you used a bogus link, or you got cute and tried to add :jonkohler: emojis!');
-        }
-      })
-    }
-  });
+    bot.startPrivateConversation(message, function(err, dm) {
 
-  controller.hears(['delete (.*)'], 'direct_message,direct_mention,mention', function(bot, message) {
-    var slashId = message.match[1].replace(/.*ntnx.tips\//, '');
-    slashId = slashId.replace('>', '');
-    slashId = slashId.replace('/', '');
-
-    collection.findOne({
-      'slashid': slashId
-    }, function(err, item) {
-      if (item == null) {
-        bot.reply(message, '*Beep boop!* Uh-oh, friend! Looks like the Slashtag \"' + slashId + '\" doesn\'t exist!\n*ERROR:* ' + err);
-      } else if (item.userid !== message.user) {
-        bot.reply(message, '*Beep boop!* Uh-oh, friend! Looks like that link isn\'t yours to delete! Maybe go talk to @matt.');
+      //check to make sure we're not attempting to shorten an ntnx.tips link
+      if (oldLinkObj[0].includes('ntnx.tips')) {
+        dm.say(':rage: You know who else loves to shorten already shortened links?! ISIS. I hope you\'re proud of yourself.');
       } else {
-
-        linkGet(item.linkid, function(err, link) {
-          if (err) {
-            bot.reply(message, '*Beep boop!* Uh-oh, friend! Looks like the Slashtag \"' + slashId + '\" doesn\'t exist!\n*ERROR:* ' + err);
-          } else {
-            bot.startConversation(message, function(err, convo) {
-              convo.ask('Are you *sure* you want to delete http://' + link.shortUrl + ', which redirects to ' + link.destination + '?', [{
-                pattern: bot.utterances.yes,
-                callback: function(response, convo) {
-                  request({
-                    uri: 'https://api.rebrandly.com/v1/links/' + item.linkid,
-                    method: 'DELETE',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      'apikey': process.env.REBRANDLY_API
-                    }
-                  }, function(err, response, body) {
-                    if (!err && response.statusCode == 200) {
-                      var link = JSON.parse(body);
-                      convo.say(':skull_and_crossbones: http://' + link.shortUrl + ' has been deleted. I hope you\'re happy.');
-                      collection.remove({
-                        'slashid': slashId
-                      });
-                      convo.next();
-                    } else {
-                      convo.say('*Beep boop!* Uh-oh, friend! Looks like the Slashtag \"' + slashId + '\" doesn\'t exist!\n ERROR: ' + err);
-                      convo.next();
-                    }
-                  })
-                }
-              }, {
-                pattern: bot.utterances.no,
-                default: true,
-                callback: function(response, convo) {
-                  convo.say('*Beep boop!* That was a close one!');
-                  convo.next();
-                }
-              }]);
+        request({
+          uri: 'https://api.rebrandly.com/v1/links',
+          method: "POST",
+          body: JSON.stringify({
+            destination: oldLinkObj[0],
+            slashtag: slashId,
+            description: oldLinkObj[0],
+            domain: {
+              id: process.env.DOMAIN_ID
+            }
+          }),
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': process.env.REBRANDLY_API
+          }
+        }, function(err, response, body) {
+          if (!err && response.statusCode == 200) {
+            var newLink = JSON.parse(body);
+            dm.say(':tada: Your new short URL is: http://' + newLink.shortUrl);
+            dm.next();
+            var record = {
+              'slashid': newLink.slashtag,
+              'userid': message.user,
+              'linkid': newLink.id
+            };
+            collection.insert(record, {
+              w: 1
+            }, function(err, result) {
+              if (err) {
+                dm.say('*Beep boop!* Hey will you tell <@matt> that I just failed to enter that link into the database?\n*ERROR:* ' + err);
+                console.log('ERROR ADDING LINK TO DB: ' + err);
+              }
             });
+          } else {
+            dm.say('*Beep boop!* Uh-oh, friend! I couldn\'t shorten your link! Most likely another user created a link with that Slashtag, you used a bogus link, or you got cute and tried to add :jonkohler: emojis!');
           }
         })
       }
     });
   });
 
-  controller.hears(['mylinks'], 'direct_message,direct_mention,mention', function(bot, message) {
+  controller.hears(['delete (.*) (.*)','delete (.*)'], 'direct_message,direct_mention,mention', function(bot, message) {
+    var slashId = message.match[1].replace(/.*ntnx.tips\//, '');
+    var forceDelete = message.match[2];
+    slashId = slashId.replace(/\W/g,'');
+    bot.startPrivateConversation(message, function(err, dm) {
+
+      collection.findOne({
+        'slashid': slashId
+      }, function(err, item) {
+        if (item == null) {
+          dm.say('*Beep boop!* Uh-oh, friend! Looks like the Slashtag \"' + slashId + '\" doesn\'t exist!\n*ERROR:* ' + err);
+          dm.next();
+        } else if (item.userid !== message.user) {
+          dm.say('*Beep boop!* Uh-oh, friend! Looks like that link isn\'t yours to delete! Maybe go talk to <@matt> if you think that\'s not correct.');
+          dm.next()
+        } else {
+          if (forceDelete == 'yes' || forceDelete == 'y' || forceDelete == 'force') {
+            linkDelete(item.linkid, function(err, link) {
+              if (err) {
+                dm.say('*Beep boop!* Uh-oh, friend! Looks like the Slashtag \"' + slashId + '\" doesn\'t exist!\n ERROR: ' + err);
+                dm.next();
+              } else {
+                dm.say(':skull_and_crossbones: http://' + link.shortUrl + ' has been deleted. I hope you\'re happy.');
+                dm.next();
+                collection.remove({
+                  'slashid': slashId
+                }, {
+                  w: 1
+                }, function(err, result) {
+                  if (err) {
+                    dm.say('*Beep boop!* Hey will you tell <@matt> that I just failed to delete that link from the database?\n*ERROR:* ' + err);
+                    dm.next();
+                  }
+                });
+              }
+            })
+          } else {
+            linkGet(item.linkid, function(err, link) {
+              if (err) {
+                dm.say('*Beep boop!* Uh-oh, friend! Looks like the Slashtag \"' + slashId + '\" doesn\'t exist!\n*ERROR:* ' + err);
+                dm.next();
+              } else {
+                  dm.ask('Are you *sure* you want to delete http://' + link.shortUrl + ', which redirects to ' + link.destination + '?', [{
+                    pattern: bot.utterances.yes,
+                    callback: function(response, dm) {
+                      linkDelete(item.linkid, function(err, link) {
+                        if (err) {
+                          dm.say('*Beep boop!* Uh-oh, friend! Looks like the Slashtag \"' + slashId + '\" doesn\'t exist!\n ERROR: ' + err);
+                          dm.next();
+                        } else {
+                          dm.say(':skull_and_crossbones: http://ntnx.tips/' + slashId + ' has been deleted. I hope you\'re happy.');
+                          dm.next();
+                          collection.remove({
+                            'slashid': slashId
+                          }, {
+                            w: 1
+                          }, function(err, result) {
+                            if (err) {
+                              dm.say('*Beep boop!* Hey will you tell <@matt> that I just failed to delete that link from the database?\n*ERROR:* ' + err);
+                              dm.next();
+                            } else {
+                              dm.next();
+                            }
+                          });
+                        }
+                      })
+                    }
+                  }, {
+                    pattern: bot.utterances.no,
+                    default: true,
+                    callback: function(response, dm) {
+                      dm.say('*Beep boop!* That was a close one!');
+                      dm.next();
+                    }
+                  }]);
+              }
+            })
+          }
+        }
+      });
+    });
+  });
+
+  controller.hears(['info (.*)', 'clicks (.*)'], 'direct_message,direct_mention,mention', function(bot, message) {
+    var slashId = message.match[1].replace(/.*ntnx.tips\//, '');
+    slashId = slashId.replace(/\W/g,'');
+    bot.startPrivateConversation(message, function(err, dm) {
+
+      collection.findOne({
+        'slashid': slashId
+      }, function(err, item) {
+        if (item == null) {
+          dm.say('*Beep boop!* Uh-oh, friend! Looks like the Slashtag \"' + slashId + '\" doesn\'t exist!\n*ERROR:* ' + err);
+          dm.next();
+        } else {
+          linkGet(item.linkid, function(err, link) {
+            if (err) {
+              dm.say('*Beep boop!* Uh-oh, friend! Looks like the Slashtag \"' + slashId + '\" doesn\'t exist!\n*ERROR:* ' + err);
+              dm.next();
+              console.log('ERROR: ' + err);
+            } else {
+              var created = new Date(link.createdAt)
+              dm.say('http://' + link.shortUrl + ' has been clicked ' + link.clicks + ' times since it was created on ' + created);
+            }
+          })
+        }
+      });
+    });
+  });
+
+  controller.hears(['mylinks','mylist','list'], 'direct_message,direct_mention,mention', function(bot, message) {
     findLinks(message.user, function(err, items) {
       bot.startPrivateConversation(message, function(err, dm) {
         if (items.length == 0) {
-          dm.say('*Beep boop!* Uh-oh, friend! Looks like I can\'t find any of your links! Maybe go talk to @matt.\n*ERROR:* ' + err);
+          dm.say('*Beep boop!* Uh-oh, friend! Looks like I can\'t find any of your links! If you\'re sure you\'ve created some, maybe go talk to <@matt>.\n*ERROR:* ' + err);
+          dm.next();
         } else {
 
           var linksPerPage = 25;
@@ -175,6 +239,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
                   linkGet(items[i + j].linkid, function(err, link) {
                     if (err) {
                       dm.say('ERROR: ' + err);
+                      dm.next();
                       console.log('ERROR: ' + err);
                     } else {
                       linklist.push(i + j + 1 + '.) http://' + link.shortUrl + '  :arrow_right:  ' + link.destination + '\n');
@@ -182,25 +247,24 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
                     }
                   })
                 } else {
-                  bot.startConversation(message, function(err, convo) {
-                    convo.say(linklist.join(''));
+
+                    dm.say(linklist.join(''));
                     if (i + j < items.length) {
-                      convo.ask('Display more links?', [{
+                      dm.ask('Display more links?', [{
                         pattern: bot.utterances.yes,
-                        callback: function(response, convo) {
-                          convo.next();
+                        callback: function(response, dm) {
+                          dm.next();
                           page(j + linksPerPage);
                         }
                       }, {
                         pattern: bot.utterances.no,
                         default: true,
-                        callback: function(response, convo) {
-                          convo.say('Cool, see you next time!');
-                          convo.next();
+                        callback: function(response, dm) {
+                          dm.say('OK, see you next time!');
+                          dm.next();
                         }
                       }]);
                     }
-                  });
 
                 }
               }
@@ -217,11 +281,11 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
   controller.hears(['help'], 'direct_message,direct_mention,mention', function(bot, message) {
     bot.reply(message, ':robot_face:*Beep boop! I\'m a bot that helps you to shorten links!*\n\n \
        I hope to learn lots of totally sweet tricks one day, in the meantime you should find these commands useful: \n\n \
-       1. @shorty shorten <Ugly Long URL> - _Creates a ntnx.tips URL with a short, random Slashtag e.g. ntnx.tips/rngg_ \n \
-       2. @shorty shorten <Ugly Long URL> <Slashtag> - _Creates a ntnx.tips URL with a sweet, custom Slashtag e.g. ntnx.tips/MattRocks_ \n \
-       3. @shorty delete <Slashtag> - _Deletes a ntnx.tips link - Also works with full ntnx.tips/slashtag link_ \n \
-       4. @shorty clicks <Slashtag> - _How many times has a ntnx.tips link been clicked - Also works with full ntnx.tips/slashtag link_ \n \
-       5. @shorty mylinks - _Displays a list of all of the ntnx.tips/ links you\'ve created_ ');
+       1. @shorty shorten \'Ugly Long URL\' - _Creates a ntnx.tips URL with a short, random Slashtag e.g. ntnx.tips/rngg_ \n \
+       2. @shorty shorten \'Ugly Long URL\' \'Slashtag\' - _Creates a ntnx.tips URL with a sweet, custom Slashtag e.g. ntnx.tips/MattRocks_ \n \
+       3. @shorty delete \'Slashtag\' - _Deletes a ntnx.tips link - Also works with full ntnx.tips/slashtag link_ \n \
+       4. @shorty clicks \'Slashtag\' - _Display how many times has a ntnx.tips link been clicked - Also works with full ntnx.tips/slashtag link_ \n \
+       5. @shorty list - _Displays a list of all of the ntnx.tips/ links you\'ve created_ ');
   });
 
   controller.hears(['get shorty'], 'direct_message,direct_mention,mention', function(bot, message) {
@@ -230,7 +294,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
       1: '_I\'m not gonna say any more than I have to, if that._',
       2: 'I\'m just a :robot_face:, but if I had a car it would totally be the Cadillac of minivans.',
       3: '_I think you oughta turn around and go back to Miami._',
-      4: '_@matt says that I\'m the Cadillac of Slackbots._',
+      4: '_<@matt> says that I\'m the Cadillac of Slackbots._',
     }
     bot.reply(message, pickRandomProperty(randQuote));
   });
@@ -286,15 +350,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
         bot.botkit.log('Failed to add emoji reaction :(', err);
       }
     });
-
-
-    controller.storage.users.get(message.user, function(err, user) {
-      if (user && user.name) {
-        bot.reply(message, 'Hello ' + user.name + '!!');
-      } else {
-        bot.reply(message, 'Hi! Type \'help\'');
-      }
-    });
+    bot.reply(message, 'Hi <@' +message.user+ '>! Type \'@shorty help\' to learn more about Shortybot.');
   });
 
   function findLinks(userid, callback) {
@@ -309,6 +365,25 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
   }
 
 });
+
+function linkDelete(id, callback) {
+  request({
+    uri: 'https://api.rebrandly.com/v1/links/' + id,
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': process.env.REBRANDLY_API
+    }
+  }, function(err, response, body) {
+    if (!err && response.statusCode == 200) {
+      var link = JSON.parse(body);
+      callback(null, link);
+    } else {
+      callback(err);
+    }
+  });
+}
+
 
 function linkGet(id, callback) {
   request({
@@ -325,7 +400,7 @@ function linkGet(id, callback) {
     } else {
       callback(err);
     }
-  })
+  });
 }
 
 function pickRandomProperty(obj) {
