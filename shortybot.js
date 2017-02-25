@@ -33,7 +33,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
 
   var controller = Botkit.slackbot({
     //storage: mongoStorage,
-    debug: true,
+    debug: false,
   });
 
   var bot = controller.spawn({
@@ -162,7 +162,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
 
   controller.hears(['mylinks'], 'direct_message,direct_mention,mention', function(bot, message) {
     findLinks(message.user, function(err, items) {
-      if (err) {
+      if (items.length == 0) {
         bot.reply(message, '*Beep boop!* Uh-oh, friend! Looks like I can\'t find any of your links! Maybe go talk to @matt.\n ERROR: ' + err);
       } else {
         var linklist = [];
