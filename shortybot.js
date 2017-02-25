@@ -96,7 +96,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
             }
           });
         } else {
-          bot.reply(message, '*Beep boop!* Uh-oh, friend! I couldn\'t shorten your link! Most likely your Slashtag already exists, you used a bogus link, or you got cute and tried to add :jonkohler: emojis!');
+          bot.reply(message, '*Beep boop!* Uh-oh, friend! I couldn\'t shorten your link! Most likely another user created a link with that Slashtag, you used a bogus link, or you got cute and tried to add :jonkohler: emojis!');
         }
       })
     }
@@ -178,7 +178,10 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
               }
             })
           } else {
-            bot.reply(message, linklist.join(''));
+            bot.startPrivateConversation(message,function(err,dm) {
+              dm.say('*Beep boop!* Here are all of the shortened links I\'ve created for you. You\'re welcome.\n\n'+linklist.join(''));
+            });
+            //bot.reply(message, linklist.join(''));
           }
         }
         looper(0);
