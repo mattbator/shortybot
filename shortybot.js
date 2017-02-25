@@ -33,7 +33,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
 
   var controller = Botkit.slackbot({
     //storage: mongoStorage,
-    debug: true,
+    debug: false,
   });
 
   var bot = controller.spawn({
@@ -53,7 +53,9 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
     var slashId = message.match[2];
 
     //Parse our any garbage around the tag
-    slashId = slashId.replace(/\W/g,'');
+    if (slashId !== undefined) {
+      slashId = slashId.replace(/\W/g,'');
+    }
 
     //Parse out hyperlink text from Slack message
     oldLink = oldLink.replace('<', '');
