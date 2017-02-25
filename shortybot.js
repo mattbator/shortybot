@@ -290,7 +290,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
       if (user && user.name) {
         bot.reply(message, 'Hello ' + user.name + '!!');
       } else {
-        bot.reply(message, 'Hi! Long time, no talk!');
+        bot.reply(message, '*Beep boop!* Hi! Type \'help\');
       }
     });
   });
