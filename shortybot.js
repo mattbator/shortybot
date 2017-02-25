@@ -173,7 +173,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
               if (err) {
                 console.log('ERROR: ' + err);
               } else {
-                linklist.push(i + 1 + '.) http://' + link.shortUrl + ' <-:robot_face:-> ' + link.destination + '\n');
+                linklist.push(i + 1 + '.) http://' + link.shortUrl + '  :arrow_right:  ' + link.destination + '\n');
                 looper(i + 1);
               }
             })
@@ -290,7 +290,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
       if (user && user.name) {
         bot.reply(message, 'Hello ' + user.name + '!!');
       } else {
-        bot.reply(message, '*Beep boop!* Hi! Type \'help\'');
+        bot.reply(message, 'Hi! Type \'help\'');
       }
     });
   });
