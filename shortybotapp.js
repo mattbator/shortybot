@@ -440,7 +440,19 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
     });
   });
 
-  controller.hears(['mypopular'], 'direct_message,direct_mention,mention', function(bot, message) {
+  controller.hears(['my top'], 'direct_message,direct_mention,mention', function(bot, message) {
+
+    findUserLinks(message.user, function(err, items) {
+      if (items == null) {
+        bot.reply(message, '*Beep Boop!* Uh-oh, friend! Looks like I can\'t find any of your links! If you\'re sure you\'ve created some, maybe go talk to <@matt>.')
+      } else {
+        // get stats for each link, load into array, sort array, print output
+      }
+
+    });
+  });
+
+    controller.hears(['top'], 'direct_message,direct_mention,mention', function(bot, message) {
 
     findUserLinks(message.user, function(err, items) {
       if (items == null) {
@@ -583,7 +595,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
         ];
         var statstitle = ''
 
-        if (user = item.userid) {
+        if (user == item.userid) {
           statstitle = "All Time - Link created on " + monthNames[created.getMonth()] + " " + created.getDate() + ", " + created.getFullYear()
         } else {
           statstitle = "All Time - Link created on " + monthNames[created.getMonth()] + " " + created.getDate() + ", " + created.getFullYear() + ' by <@' + item.userid + '>'
@@ -642,7 +654,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
               }
             }]
           })
-        } else if (user = item.userid) {
+        } else if (user == item.userid) {
           reply.attachments.push({
             title: 'Actions',
             callback_id: user,
