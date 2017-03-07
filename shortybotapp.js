@@ -21,7 +21,7 @@ var cron = require('node-cron');
 
 var linksPerPage = 10;
 
-var monthNames = ["January", "February", "March", "April", "May", "June","July", "August", "September", "October", "November", "December"];
+var monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 var Botkit = require('./lib/Botkit.js');
 
@@ -464,45 +464,10 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
     });
   });
 
-  controller.hears(['active-users'], 'direct_message,direct_mention,mention', function(bot, message) {
-
-    linkCollection.aggregate([{
-      $group: {
-        _id: '$userid',
-        count: {
-          $sum: 1
-        }
-      }
-    }, {
-      $sort: {
-        'count': -1
-      }
-    }], function(err, result) {
-      if (err) {
-        controller.log.error('Error sorting per user link counts: ' + err)
-      } else {
-        var topUsersText = ''
-        for (var i = 0; i < result.length && i < 10; i++) {
-          topUsersText += '\n<@' + result[i]._id + '> - ' + result[i].count + ' Links Created'
-        }
-
-        var reply = {
-          attachments: [{
-            title: "Most Active Users",
-            text: topUsersText,
-            color: "#024DA1"
-          }],
-        }
-        bot.reply(message, reply)
-      }
-    });
-  });
-
-
   //Update global top links every 2 hours
-  cron.schedule('0 */2 * * *', function(){
-  updateTopLinks();
-});
+  cron.schedule('0 */2 * * *', function() {
+    updateTopLinks();
+  });
 
   controller.hears(['force-update'], 'direct_message,direct_mention,mention', function(bot, message) {
     updateTopLinks();
@@ -618,6 +583,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
     var todayText = ''
     var weekText = ''
     var monthText = ''
+    var topUsersText = ''
 
     topCollection.findOne({
       'time': 'allTime'
@@ -667,9 +633,20 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
               }
             }
 
-            if (allTimeText) {
+            topCollection.findOne({
+              'users': 'users'
+            }, function(err, topUsers) {
+              if (topUsers == null) {
+                controller.log.error('Cannot find month top users in the db: ' + err);
+              } else {
+                for (var i = 0; i < topUsers.results.length; i++) {
+                  topUsersText += '\n<@' + topUsers.results[i]._id + '> - ' + topUsers.results[i].count + ' Links Created'
+                }
+              }
 
-              var reply = {
+              if (allTimeText) {
+
+                var reply = {
                   text: 'Here are *the* most popular links:',
                   attachments: [],
                 }
@@ -694,13 +671,21 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
                     color: "#024DA1"
                   })
                 }
-              reply.attachments.push({
-                title: "All Time",
-                text: allTimeText,
-                color: "#024DA1"
-              })
-              bot.reply(message, reply)
-            }
+                reply.attachments.push({
+                  title: "All Time",
+                  text: allTimeText,
+                  color: "#024DA1"
+                })
+                if (topUsersText) {
+                  reply.attachments.push({
+                    title: "Most Active Users",
+                    text: topUsersText,
+                    color: "#024DA1"
+                  })
+                }
+                bot.reply(message, reply)
+              }
+            });
           });
         });
       });
@@ -747,18 +732,22 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
 
   });
 
-  function sortBy(field, reverse, primer){
+  function sortBy(field, reverse, primer) {
 
-   var key = primer ? 
-       function(x) {return primer(x[field])} : 
-       function(x) {return x[field]};
+    var key = primer ?
+      function(x) {
+        return primer(x[field])
+      } :
+      function(x) {
+        return x[field]
+      };
 
-   reverse = !reverse ? 1 : -1;
+    reverse = !reverse ? 1 : -1;
 
-   return function (a, b) {
-       return a = key(a), b = key(b), reverse * ((a > b) - (b > a));
-     } 
-}
+    return function(a, b) {
+      return a = key(a), b = key(b), reverse * ((a > b) - (b > a));
+    }
+  }
 
   function printStats(stats, shorturl, destination, linkid, index, fromlist, user, callback) {
 
@@ -860,7 +849,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
             title: 'Destination Link',
             text: destination,
             color: "#024DA1"
-          },{
+          }, {
             title: statstitle,
             thumb_url: 'http://emojipedia-us.s3.amazonaws.com/cache/ea/b4/eab4395537306eaf63806710022ecc8f.png',
             text: totalText,
@@ -955,7 +944,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
                       if (stats == null) {
                         statsLooper(j + 1);
                       } else {
-                        allLinks.push ({
+                        allLinks.push({
                           'shortUrl': links[j].shortUrl,
                           'allClicks': stats.analytics.allTime.shortUrlClicks,
                           'todayClicks': stats.analytics.day.shortUrlClicks,
@@ -984,16 +973,16 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
               allTime.push(allLinks[i]);
             }
             var record = {
-              'time':'allTime',
-              'links':allTime
+              'time': 'allTime',
+              'links': allTime
             }
             topCollection.insert(record, {
-            w: 1
-          }, function(err, result) {
-            if (err) {
-              controller.log.error('Failed to add allTime record to db: ' + err);
-            }
-          });
+              w: 1
+            }, function(err, result) {
+              if (err) {
+                controller.log.error('Failed to add allTime record to db: ' + err);
+              }
+            });
 
             allLinks.sort(sortBy('todayClicks', true));
             var today = []
@@ -1001,16 +990,16 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
               today.push(allLinks[i]);
             }
             record = {
-              'time':'today',
-              'links':today
+              'time': 'today',
+              'links': today
             }
             topCollection.insert(record, {
-            w: 1
-          }, function(err, result) {
-            if (err) {
-              controller.log.error('Failed to add today record to db: ' + err);
-            }
-          });
+              w: 1
+            }, function(err, result) {
+              if (err) {
+                controller.log.error('Failed to add today record to db: ' + err);
+              }
+            });
 
             allLinks.sort(sortBy('weekClicks', true));
             var week = []
@@ -1018,16 +1007,16 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
               week.push(allLinks[i]);
             }
             record = {
-              'time':'week',
-              'links':week
+              'time': 'week',
+              'links': week
             }
             topCollection.insert(record, {
-            w: 1
-          }, function(err, result) {
-            if (err) {
-              controller.log.error('Failed to add week record to db: ' + err);
-            }
-          });
+              w: 1
+            }, function(err, result) {
+              if (err) {
+                controller.log.error('Failed to add week record to db: ' + err);
+              }
+            });
 
             allLinks.sort(sortBy('monthClicks', true));
             var month = []
@@ -1035,19 +1024,53 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
               month.push(allLinks[i]);
             }
             record = {
-              'time':'month',
-              'links':month
+              'time': 'month',
+              'links': month
             }
             topCollection.insert(record, {
-            w: 1
-          }, function(err, result) {
-            if (err) {
-              controller.log.error('Failed to add month record to db: ' + err);
-            }
-          });
+              w: 1
+            }, function(err, result) {
+              if (err) {
+                controller.log.error('Failed to add month record to db: ' + err);
+              }
+            });
+
+            linkCollection.aggregate([{
+              $group: {
+                _id: '$userid',
+                count: {
+                  $sum: 1
+                }
+              }
+            }, {
+              $sort: {
+                'count': -1
+              }
+            }], function(err, result) {
+              if (err) {
+                controller.log.error('Error sorting per user link counts: ' + err)
+              } else {
+                var users = []
+                for (var i = 0; i < result.length && i < 10; i++) {
+                  users.push(result[i]);
+                }
+                record = {
+                  'users': 'users',
+                  'results': users
+                }
+                topCollection.insert(record, {
+                  w: 1
+                }, function(err, result) {
+                  if (err) {
+                    controller.log.error('Failed to active users record to db: ' + err);
+                  }
+                });
+
+              }
+            });
             var now = new Date();
             console.log('Top links updated at: ' + now)
-        }
+          }
         }
         looper(0);
       }
@@ -1232,7 +1255,7 @@ function statsGet(id, callback) {
   });
 }
 
-function linkBatchGet(offset,callback) {
+function linkBatchGet(offset, callback) {
   request({
     uri: 'https://api.rebrandly.com/v1/links?withStats=false&offset=' + offset + '&limit=100',
     method: "GET",
