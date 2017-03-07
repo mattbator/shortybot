@@ -1,6 +1,4 @@
 node_modules/
 .env
 db_slackbutton_bot/
-docs/
-examples/
-tests/
+.DS_Store
