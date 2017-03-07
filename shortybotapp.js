@@ -17,7 +17,11 @@ require('dotenv').config({
 
 var request = require('request');
 
+var cron = require('node-cron');
+
 var linksPerPage = 10;
+
+var monthNames = ["January", "February", "March", "April", "May", "June","July", "August", "September", "October", "November", "December"];
 
 var Botkit = require('./lib/Botkit.js');
 
@@ -71,7 +75,14 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
       controller.log.error('Failed to create "links" collection: ' + err);
     }
   });
-  var collection = db.collection('links');
+  var linkCollection = db.collection('links');
+
+  db.createCollection('top', function(err, collection) {
+    if (err) {
+      controller.log.error('Failed to create "top" collection: ' + err);
+    }
+  });
+  var topCollection = db.collection('top');
 
   // just a simple way to make sure we don't
   // connect to the RTM twice for the same team
@@ -117,7 +128,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
           if (err) {
             bot.reply(message, '*Beep Boop!* Failed to delete link.');
           } else {
-            bot.replyInteractive(message, '*Beep Boop!*' + shorturl + ' has been deleted :skull_and_crossbones:');
+            bot.replyInteractive(message, shorturl + ' has been deleted :skull_and_crossbones:');
           }
         });
 
@@ -129,12 +140,13 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
         var shorturl = ids[1];
         var index = ids[2];
         var linkid = ids[3];
+        var destination = ids[4];
 
         statsGet(googlid, function(err, stats) {
           if (stats == null) {
             bot.reply(message, '*Beep Boop!* Looks like I failed to retrieve stats for ' + shorturl);
           } else {
-            printStats(stats, shorturl, linkid, index, true, message.user, function(err, reply) {
+            printStats(stats, shorturl, destination, linkid, index, true, message.user, function(err, reply) {
               bot.replyInteractive(message, reply);
             });
 
@@ -293,20 +305,32 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
       attachments: [{
         fallback: "I hope to learn lots of totally sweet tricks one day, in the meantime you should find these commands useful:",
         thumb_url: "http://emojipedia-us.s3.amazonaws.com/cache/c8/2a/c82abe67c3792acbaa5ee5917a6400cf.png",
-        text: "I hope to learn lots of totally sweet tricks one day, in the meantime you should find these commands useful:",
-        title: "*Beep Boop! I\'m a bot that helps you to shorten links!*",
+        text: "I hope to learn lots of totally awesome tricks one day, in the meantime you should find these commands useful:",
+        title: "Beep Boop! I\'m a bot that helps you to shorten links!",
         color: "#AFD135"
       }, {
-        text: "@shorty shorten \'Ugly Long URL\' - Creates a ntnx.tips URL with a short, random Slashtag e.g. http://ntnx.tips/rngg",
+        title: "@shorty shorten \'Ugly Long URL\'",
+        text: "Creates a ntnx.tips link with a short, random Slashtag e.g. http://ntnx.tips/rngg",
         color: "#024DA1"
       }, {
-        text: "@shorty shorten \'Ugly Long URL\' \'Slashtag\' - Creates a ntnx.tips URL with a sweet, custom Slashtag e.g. http://ntnx.tips/MattRocks",
+        title: "@shorty shorten \'Ugly Long URL\' \'Slashtag\'",
+        text: "Creates a ntnx.tips link with a sweet, custom Slashtag e.g. http://ntnx.tips/MattRocks",
         color: "#024DA1"
       }, {
-        text: "@shorty stats \'Slashtag\' - Retrieves stats for an ntnx.tips URL - Also works with full ntnx.tips/slashtag link",
+        title: "@shorty stats \'Slashtag\'",
+        text: "Gets stats for an ntnx.tips link - Also works with full ntnx.tips/slashtag link",
         color: "#024DA1"
       }, {
-        text: "@shorty list - Retrieves a list of all of the ntnx.tips/ links you\'ve created",
+        title: "@shorty list",
+        text: "Interactive list all of the ntnx.tips links you\'ve created",
+        color: "#024DA1"
+      }, {
+        title: "@shorty my top",
+        text: "Lists your personal top 10 most popular ntnx.tips links",
+        color: "#024DA1"
+      }, {
+        title: "@shorty top",
+        text: "Lists the global top 10 most popular ntnx.tips links - Updated every 2 hours",
         color: "#024DA1"
       }]
     }
@@ -326,7 +350,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
     slashId = slashId.replace(/\W/g, '');
 
     bot.startPrivateConversation(message, function(err, dm) {
-      collection.findOne({
+      linkCollection.findOne({
         'slashid': slashId
       }, function(err, item) {
         if (item == null) {
@@ -341,7 +365,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
                 if (stats == null) {
                   dm.say('*Beep Boop!* Looks like I failed to retrieve stats for http://ntnx.tips/' + item.slashid);
                 } else {
-                  printStats(stats, link.shortUrl, link.id, 0, false, message.user, function(err, reply) {
+                  printStats(stats, link.shortUrl, link.destination, link.id, 0, false, message.user, function(err, reply) {
                     dm.say(reply);
                   });
                 }
@@ -403,7 +427,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
             'linkid': newLink.id,
             'createdDate': now.getFullYear() + '-' + now.getMonth() + 1 + '-' + now.getDate()
           };
-          collection.insert(record, {
+          linkCollection.insert(record, {
             w: 1
           }, function(err, result) {
             if (err) {
@@ -424,14 +448,14 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
     var now = new Date();
     var today = now.getFullYear() + '-' + now.getMonth() + 1 + '-' + now.getDate()
 
-    collection.find({
+    linkCollection.find({
       'createdDate': today
     }).toArray(function(err, items) {
       if (items.length == 0) {
         bot.reply(message, '*Beep Boop!* I must be putting the Slack in slacker because I haven\'t shortened *any* new links today!')
         controller.log.error('Could not find db entries for createdDate ' + today);
       } else {
-        var reply = '*Beep Boop!* I\'ve shortened ' + items.length + ' new links today!\n'
+        var reply = 'I\'ve shortened ' + items.length + ' new links today!\n'
         for (var i = 0; i < items.length; i++) {
           reply += '\nhttp://ntnx.tips/' + items[i].slashid + ' - <@' + items[i].userid + '>'
         }
@@ -440,28 +464,248 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
     });
   });
 
-  controller.hears(['my top'], 'direct_message,direct_mention,mention', function(bot, message) {
+  controller.hears(['active-users'], 'direct_message,direct_mention,mention', function(bot, message) {
 
-    findUserLinks(message.user, function(err, items) {
-      if (items == null) {
-        bot.reply(message, '*Beep Boop!* Uh-oh, friend! Looks like I can\'t find any of your links! If you\'re sure you\'ve created some, maybe go talk to <@matt>.')
-      } else {
-        // get stats for each link, load into array, sort array, print output
+    linkCollection.aggregate([{
+      $group: {
+        _id: '$userid',
+        count: {
+          $sum: 1
+        }
       }
+    }, {
+      $sort: {
+        'count': -1
+      }
+    }], function(err, result) {
+      if (err) {
+        controller.log.error('Error sorting per user link counts: ' + err)
+      } else {
+        var topUsersText = ''
+        for (var i = 0; i < result.length && i < 10; i++) {
+          topUsersText += '\n<@' + result[i]._id + '> - ' + result[i].count + ' Links Created'
+        }
 
+        var reply = {
+          attachments: [{
+            title: "Most Active Users",
+            text: topUsersText,
+            color: "#024DA1"
+          }],
+        }
+        bot.reply(message, reply)
+      }
     });
   });
 
-    controller.hears(['top'], 'direct_message,direct_mention,mention', function(bot, message) {
+
+  //Update global top links every 2 hours
+  cron.schedule('0 */2 * * *', function(){
+  updateTopLinks();
+});
+
+  controller.hears(['force-update'], 'direct_message,direct_mention,mention', function(bot, message) {
+    updateTopLinks();
+  });
+
+  controller.hears(['my top', 'my popular'], 'direct_message,direct_mention,mention', function(bot, message) {
 
     findUserLinks(message.user, function(err, items) {
       if (items == null) {
         bot.reply(message, '*Beep Boop!* Uh-oh, friend! Looks like I can\'t find any of your links! If you\'re sure you\'ve created some, maybe go talk to <@matt>.')
       } else {
-        // get stats for each link, load into array, sort array, print output
+        userStats = []
+
+        function looper(i) {
+          if (i < items.length) {
+            linkGet(items[i].linkid, function(err, link) {
+              if (link == null) {
+                looper(i + 1);
+              } else {
+                statsGet(link.integration.link, function(err, stats) {
+                  if (stats == null) {
+                    looper(i + 1);
+                  } else {
+                    userStats.push({
+                      'allClicks': stats.analytics.allTime.shortUrlClicks,
+                      'todayClicks': stats.analytics.day.shortUrlClicks,
+                      'weekClicks': stats.analytics.week.shortUrlClicks,
+                      'monthClicks': stats.analytics.month.shortUrlClicks,
+                      'created': stats.created,
+                      'shortUrl': link.shortUrl
+                    });
+                    looper(i + 1);
+                  }
+                })
+
+              }
+            });
+          } else {
+            userStats.sort(sortBy('allClicks', true));
+            var allTimeText = ''
+            for (var i = 0; i < userStats.length && i < 10 && userStats[i].allClicks > 0; i++) {
+              var created = new Date(userStats[i].created);
+              allTimeText += '\nhttp://' + userStats[i].shortUrl + ' - ' + userStats[i].allClicks + ' Clicks - Created on ' + monthNames[created.getMonth()] + " " + created.getDate() + ", " + created.getFullYear()
+            }
+
+            userStats.sort(sortBy('todayClicks', true));
+            var todayText = ''
+            for (var i = 0; i < userStats.length && i < 10 && userStats[i].todayClicks > 0; i++) {
+              var created = new Date(userStats[i].created);
+              todayText += '\nhttp://' + userStats[i].shortUrl + ' - ' + userStats[i].todayClicks + ' Clicks - Created on ' + monthNames[created.getMonth()] + " " + created.getDate() + ", " + created.getFullYear()
+            }
+
+            userStats.sort(sortBy('weekClicks', true));
+            var weekText = ''
+            for (var i = 0; i < userStats.length && i < 10 && userStats[i].weekClicks > 0; i++) {
+              var created = new Date(userStats[i].created);
+              weekText += '\nhttp://' + userStats[i].shortUrl + ' - ' + userStats[i].weekClicks + ' Clicks - Created on ' + monthNames[created.getMonth()] + " " + created.getDate() + ", " + created.getFullYear()
+            }
+
+            userStats.sort(sortBy('monthClicks', true));
+            var monthText = ''
+            for (var i = 0; i < userStats.length && i < 10 && userStats[i].monthClicks > 0; i++) {
+              var created = new Date(userStats[i].created);
+              monthText += '\nhttp://' + userStats[i].shortUrl + ' - ' + userStats[i].monthClicks + ' Clicks - Created on ' + monthNames[created.getMonth()] + " " + created.getDate() + ", " + created.getFullYear()
+            }
+
+            if (allTimeText) {
+
+              var reply = {
+                text: 'Here are *your* most popular links:',
+                attachments: [],
+              }
+              if (todayText) {
+                reply.attachments.push({
+                  title: "Today",
+                  text: todayText,
+                  color: "#024DA1"
+                })
+              }
+              if (weekText) {
+                reply.attachments.push({
+                  title: "This Week",
+                  text: weekText,
+                  color: "#024DA1"
+                })
+              }
+              if (monthText) {
+                reply.attachments.push({
+                  title: "This Month",
+                  text: monthText,
+                  color: "#024DA1"
+                })
+              }
+              reply.attachments.push({
+                title: "All Time",
+                text: allTimeText,
+                color: "#024DA1"
+              })
+              bot.reply(message, reply)
+            } else {
+              bot.reply(message, '*Beep Boop!* No one has clicked any of your links yet. If I had emotions, this would make me sad.')
+            }
+          }
+        }
+        looper(0);
+      }
+    });
+  });
+
+  controller.hears(['top', 'popular'], 'direct_message,direct_mention,mention', function(bot, message) {
+
+    var allTimeText = ''
+    var todayText = ''
+    var weekText = ''
+    var monthText = ''
+
+    topCollection.findOne({
+      'time': 'allTime'
+    }, function(err, topLinks) {
+      if (topLinks == null) {
+        controller.log.error('Cannot find allTime top links in the db: ' + err);
+      } else {
+        for (var i = 0; i < topLinks.links.length; i++) {
+          var created = new Date(topLinks.links[i].created);
+          allTimeText += '\nhttp://' + topLinks.links[i].shortUrl + ' - ' + topLinks.links[i].allClicks + ' Clicks - Created by <@' + topLinks.links[i].userid + '> on ' + monthNames[created.getMonth()] + " " + created.getDate() + ", " + created.getFullYear()
+        }
       }
 
+      topCollection.findOne({
+        'time': 'today'
+      }, function(err, topLinks) {
+        if (topLinks == null) {
+          controller.log.error('Cannot find today top links in the db: ' + err);
+        } else {
+          for (var i = 0; i < topLinks.links.length; i++) {
+            var created = new Date(topLinks.links[i].created);
+            todayText += '\nhttp://' + topLinks.links[i].shortUrl + ' - ' + topLinks.links[i].todayClicks + ' Clicks - Created by <@' + topLinks.links[i].userid + '> on ' + monthNames[created.getMonth()] + " " + created.getDate() + ", " + created.getFullYear()
+          }
+        }
+
+        topCollection.findOne({
+          'time': 'week'
+        }, function(err, topLinks) {
+          if (topLinks == null) {
+            controller.log.error('Cannot find week top links in the db: ' + err);
+          } else {
+            for (var i = 0; i < topLinks.links.length; i++) {
+              var created = new Date(topLinks.links[i].created);
+              weekText += '\nhttp://' + topLinks.links[i].shortUrl + ' - ' + topLinks.links[i].weekClicks + ' Clicks - Created by <@' + topLinks.links[i].userid + '> on ' + monthNames[created.getMonth()] + " " + created.getDate() + ", " + created.getFullYear()
+            }
+          }
+
+          topCollection.findOne({
+            'time': 'month'
+          }, function(err, topLinks) {
+            if (topLinks == null) {
+              controller.log.error('Cannot find month top links in the db: ' + err);
+            } else {
+              for (var i = 0; i < topLinks.links.length; i++) {
+                var created = new Date(topLinks.links[i].created);
+                monthText += '\nhttp://' + topLinks.links[i].shortUrl + ' - ' + topLinks.links[i].monthClicks + ' Clicks - Created by <@' + topLinks.links[i].userid + '> on ' + monthNames[created.getMonth()] + " " + created.getDate() + ", " + created.getFullYear()
+              }
+            }
+
+            if (allTimeText) {
+
+              var reply = {
+                  text: 'Here are *the* most popular links:',
+                  attachments: [],
+                }
+                if (todayText) {
+                  reply.attachments.push({
+                    title: "Today",
+                    text: todayText,
+                    color: "#024DA1"
+                  })
+                }
+                if (weekText) {
+                  reply.attachments.push({
+                    title: "This Week",
+                    text: weekText,
+                    color: "#024DA1"
+                  })
+                }
+                if (monthText) {
+                  reply.attachments.push({
+                    title: "This Month",
+                    text: monthText,
+                    color: "#024DA1"
+                  })
+                }
+              reply.attachments.push({
+                title: "All Time",
+                text: allTimeText,
+                color: "#024DA1"
+              })
+              bot.reply(message, reply)
+            }
+          });
+        });
+      });
     });
+
   });
 
   /*controller.hears('^stop', 'direct_message', function(bot, message) {
@@ -503,9 +747,22 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
 
   });
 
-  function printStats(stats, shorturl, linkid, index, fromlist, user, callback) {
+  function sortBy(field, reverse, primer){
 
-    collection.findOne({
+   var key = primer ? 
+       function(x) {return primer(x[field])} : 
+       function(x) {return x[field]};
+
+   reverse = !reverse ? 1 : -1;
+
+   return function (a, b) {
+       return a = key(a), b = key(b), reverse * ((a > b) - (b > a));
+     } 
+}
+
+  function printStats(stats, shorturl, destination, linkid, index, fromlist, user, callback) {
+
+    linkCollection.findOne({
       'linkid': linkid
     }, function(err, item) {
       if (item == null) {
@@ -590,9 +847,6 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
         }
 
         var created = new Date(stats.created);
-        var monthNames = ["January", "February", "March", "April", "May", "June",
-          "July", "August", "September", "October", "November", "December"
-        ];
         var statstitle = ''
 
         if (user == item.userid) {
@@ -601,8 +855,12 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
           statstitle = "All Time - Link created on " + monthNames[created.getMonth()] + " " + created.getDate() + ", " + created.getFullYear() + ' by <@' + item.userid + '>'
         }
         var reply = {
-          text: '*Beep Boop!* Here\'s all I can tell you about http://' + shorturl,
+          text: 'Here\'s all I can tell you about http://' + shorturl,
           attachments: [{
+            title: 'Destination Link',
+            text: destination,
+            color: "#024DA1"
+          },{
             title: statstitle,
             thumb_url: 'http://emojipedia-us.s3.amazonaws.com/cache/ea/b4/eab4395537306eaf63806710022ecc8f.png',
             text: totalText,
@@ -680,6 +938,122 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
     });
   }
 
+  function updateTopLinks() {
+    var allLinks = [];
+
+    linkCountGet(function(err, count) {
+      if (count) {
+        function looper(i) {
+          if (i < count) {
+            linkBatchGet(i, function(err, links) {
+              if (links == null) {
+                looper(i + 100);
+              } else {
+                function statsLooper(j) {
+                  if (j < links.length) {
+                    statsGet(links[j].integration.link, function(err, stats) {
+                      if (stats == null) {
+                        statsLooper(j + 1);
+                      } else {
+                        allLinks.push ({
+                          'shortUrl': links[j].shortUrl,
+                          'allClicks': stats.analytics.allTime.shortUrlClicks,
+                          'todayClicks': stats.analytics.day.shortUrlClicks,
+                          'weekClicks': stats.analytics.week.shortUrlClicks,
+                          'monthClicks': stats.analytics.month.shortUrlClicks,
+                          'created': stats.created,
+                          'userid': links[j].title
+                        });
+                        statsLooper(j + 1);
+                      }
+                    });
+                  } else {
+                    looper(i + 100);
+                  }
+                }
+                statsLooper(0);
+              }
+            });
+          } else {
+            //Delete existing db entries for top
+            topCollection.remove();
+
+            allLinks.sort(sortBy('allClicks', true));
+            var allTime = []
+            for (var i = 0; i < allLinks.length && i < 10 && allLinks[i].allClicks > 0; i++) {
+              allTime.push(allLinks[i]);
+            }
+            var record = {
+              'time':'allTime',
+              'links':allTime
+            }
+            topCollection.insert(record, {
+            w: 1
+          }, function(err, result) {
+            if (err) {
+              controller.log.error('Failed to add allTime record to db: ' + err);
+            }
+          });
+
+            allLinks.sort(sortBy('todayClicks', true));
+            var today = []
+            for (var i = 0; i < allLinks.length && i < 10 && allLinks[i].todayClicks > 0; i++) {
+              today.push(allLinks[i]);
+            }
+            record = {
+              'time':'today',
+              'links':today
+            }
+            topCollection.insert(record, {
+            w: 1
+          }, function(err, result) {
+            if (err) {
+              controller.log.error('Failed to add today record to db: ' + err);
+            }
+          });
+
+            allLinks.sort(sortBy('weekClicks', true));
+            var week = []
+            for (var i = 0; i < allLinks.length && i < 10 && allLinks[i].weekClicks > 0; i++) {
+              week.push(allLinks[i]);
+            }
+            record = {
+              'time':'week',
+              'links':week
+            }
+            topCollection.insert(record, {
+            w: 1
+          }, function(err, result) {
+            if (err) {
+              controller.log.error('Failed to add week record to db: ' + err);
+            }
+          });
+
+            allLinks.sort(sortBy('monthClicks', true));
+            var month = []
+            for (var i = 0; i < allLinks.length && i < 10 && allLinks[i].monthClicks > 0; i++) {
+              month.push(allLinks[i]);
+            }
+            record = {
+              'time':'month',
+              'links':month
+            }
+            topCollection.insert(record, {
+            w: 1
+          }, function(err, result) {
+            if (err) {
+              controller.log.error('Failed to add month record to db: ' + err);
+            }
+          });
+            var now = new Date();
+            console.log('Top links updated at: ' + now)
+        }
+        }
+        looper(0);
+      }
+    });
+  }
+
   function listLinks(user, index, callback) {
     var reply = {};
     var index = parseInt(index);
@@ -702,7 +1076,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
         }
 
         var reply = {
-          text: '*Beep Boop!* I\'ve shortened *' + items.length + '* links for you, <@' + user + '>!\nLinks ' + begin + ' - ' + end + ':',
+          text: 'I\'ve shortened *' + items.length + '* links for you, <@' + user + '>!\nLinks ' + begin + ' - ' + end + ':',
           attachments: [],
         }
 
@@ -721,7 +1095,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
                   actions: [{
                     "name": "stats",
                     "text": "Get Stats",
-                    "value": link.integration.link + '-' + link.shortUrl + '-' + index + '-' + items[i + index].linkid,
+                    "value": link.integration.link + '-' + link.shortUrl + '-' + index + '-' + link.id + '-' + link.destination,
                     "type": "button",
                   }, {
                     "text": "Delete Link",
@@ -796,7 +1170,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
 
   function findUserLinks(userid, callback) {
     var items = []
-    collection.find({
+    linkCollection.find({
       'userid': userid
     }).toArray(function(err, items) {
       if (items.length < 1) {
@@ -819,7 +1193,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
     }, function(err, response, body) {
       if (!err && response.statusCode == 200) {
         var link = JSON.parse(body);
-        collection.remove({
+        linkCollection.remove({
           'linkid': id
         }, {
           w: 1
@@ -853,6 +1227,44 @@ function statsGet(id, callback) {
       callback(null, stats);
     } else {
       controller.log.error('Failed to return Goo.gl stats for ' + googlid + ': ' + JSON.stringify(response));
+      callback(true);
+    }
+  });
+}
+
+function linkBatchGet(offset,callback) {
+  request({
+    uri: 'https://api.rebrandly.com/v1/links?withStats=false&offset=' + offset + '&limit=100',
+    method: "GET",
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': process.env.REBRANDLY_API
+    }
+  }, function(err, response, body) {
+    if (!err && response.statusCode == 200) {
+      var links = JSON.parse(body);
+      callback(null, links);
+    } else {
+      controller.log.error('Failed to return links: ' + JSON.stringify(response));
+      callback(true);
+    }
+  });
+}
+
+function linkCountGet(callback) {
+  request({
+    uri: 'https://api.rebrandly.com/v1/links/count',
+    method: "GET",
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': process.env.REBRANDLY_API
+    }
+  }, function(err, response, body) {
+    if (!err && response.statusCode == 200) {
+      var count = JSON.parse(body).count;
+      callback(null, count);
+    } else {
+      controller.log.error('Failed to return link count: ' + JSON.stringify(response));
       callback(true);
     }
   });
