@@ -19,7 +19,7 @@ var request = require('request');
 
 var cron = require('node-cron');
 
-var linksPerPage = 10;
+var linksPerPage = 4;
 
 var monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
@@ -96,9 +96,11 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
 
     switch (message.actions[0].name) {
       case 'showMore':
-        var index = message.actions[0].value;
+        var ids = message.actions[0].value.split(/\-/);
+        var index = parseInt(ids[0]);
+        var user = ids[1];
 
-        listLinks(message.user, index, function(err, reply) {
+        listLinks(message.user, user, index, function(err, reply) {
           bot.replyInteractive(message, reply);
         });
         break;
@@ -112,7 +114,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
           if (err) {
             bot.reply(message, '*Beep Boop!* Failed to delete link.')
           } else {
-            listLinks(message.user, index, function(err, reply) {
+            listLinks(message.user, message.user, index, function(err, reply) {
               bot.replyInteractive(message, reply);
             });
           }
@@ -262,7 +264,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
     bot.reply(message, reply);
   });
 
-  controller.hears(['fuck you'], 'direct_message,direct_mention,mention', function(bot, message) {
+  controller.hears(['fuck you', 'fuck off'], 'direct_message,direct_mention,mention', function(bot, message) {
     var randGif = {
       0: 'https://media1.giphy.com/media/3oz8xRd39FNNdzZjGw/giphy.gif',
       1: 'https://media3.giphy.com/media/tfzw8nJe6FPFK/giphy.gif',
@@ -325,6 +327,10 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
         text: "Interactive list all of the ntnx.tips links you\'ve created",
         color: "#024DA1"
       }, {
+        title: "@shorty list \'@someuser\'",
+        text: "Interactive list all of the ntnx.tips links that user has created",
+        color: "#024DA1"
+      }, {
         title: "@shorty my top",
         text: "Lists your personal top 10 most popular ntnx.tips links",
         color: "#024DA1"
@@ -337,9 +343,20 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
     bot.reply(message, reply);
   });
 
+  controller.hears(['list (.*)', 'links (.*)'], 'direct_message,direct_mention,mention', function(bot, message) {
+    var user = message.match[1];
+    user = user.replace(/\W/g, '');
+
+    bot.startPrivateConversation(message, function(err, dm) {
+      listLinks(message.user, user, 0, function(err, reply) {
+        dm.say(reply);
+      });
+    });
+  });
+
   controller.hears(['list', 'links', 'mylinks', 'mylist'], 'direct_message,direct_mention,mention', function(bot, message) {
     bot.startPrivateConversation(message, function(err, dm) {
-      listLinks(message.user, 0, function(err, reply) {
+      listLinks(message.user, message.user, 0, function(err, reply) {
         dm.say(reply);
       });
     });
@@ -876,7 +893,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
           })
         }
 
-        if (fromlist) {
+        if (fromlist && user == item.userid) {
           reply.attachments.push({
             title: 'Actions',
             callback_id: user,
@@ -885,7 +902,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
             actions: [{
               "name": "showMore",
               "text": "Return",
-              "value": index,
+              "value": index + '-' + item.userid,
               "type": "button",
             }, {
               "text": "Delete Link",
@@ -899,6 +916,19 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
                 "ok_text": "Yes",
                 "dismiss_text": "No"
               }
+            }]
+          })
+        } else if (fromlist && user !== item.userid) {
+          reply.attachments.push({
+            title: 'Actions',
+            callback_id: user,
+            color: "#AFD135",
+            attachment_type: 'default',
+            actions: [{
+              "name": "showMore",
+              "text": "Return",
+              "value": index + '-' + item.userid,
+              "type": "button"
             }]
           })
         } else if (user == item.userid) {
@@ -1077,108 +1107,126 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
     });
   }
 
-  function listLinks(user, index, callback) {
+  function listLinks(requestingUser, user, index, callback) {
     var reply = {};
     var index = parseInt(index);
     var begin = index + 1; //6
     var end = index + linksPerPage; //10
 
     findUserLinks(user, function(err, items) {
-      if (err || items.length == 0) {
-        reply = '*Beep Boop!* Uh-oh, friend! Looks like I can\'t find any of your links! If you\'re sure you\'ve created some, maybe go talk to <@matt>.'
-        controller.log.error('Failed to print link list for userid: ' + user);
-        callback(true, reply);
-      } else {
+        if (err || items.length == 0) {
+          reply = '*Beep Boop!* Uh-oh, friend! Looks like I can\'t find any of your links! If you\'re sure you\'ve created some, maybe go talk to <@matt>.'
+          controller.log.error('Failed to print link list for userid: ' + user);
+          callback(true, reply);
+        } else {
 
-        if (end > items.length) {
-          end = items.length //5
-        }
-        if (begin > items.length) {
-          index = begin - linksPerPage - 1
-          begin = index
-        }
+          if (end > items.length) {
+            end = items.length //5
+          }
+          if (begin > items.length) {
+            index = begin - linksPerPage - 1
+            begin = index
+          }
 
-        var reply = {
-          text: 'I\'ve shortened *' + items.length + '* links for you, <@' + user + '>!\nLinks ' + begin + ' - ' + end + ':',
-          attachments: [],
-        }
+          var reply = {
+            text: 'I\'ve shortened *' + items.length + '* links for <@' + user + '>!\nLinks ' + begin + ' - ' + end + ':',
+            attachments: [],
+          }
 
-        function looper(i) {
-          if (i < linksPerPage && i + index < items.length) {
-            linkGet(items[i + index].linkid, function(err, link) {
-              if (link == null) {
-                looper(i + 1);
-              } else {
-                reply.attachments.push({
-                  title: link.shortUrl,
-                  text: link.destination,
-                  callback_id: user,
-                  color: "#024DA1",
-                  attachment_type: 'default',
-                  actions: [{
-                    "name": "stats",
-                    "text": "Get Stats",
-                    "value": link.integration.link + '-' + link.shortUrl + '-' + index + '-' + link.id + '-' + link.destination,
-                    "type": "button",
-                  }, {
-                    "text": "Delete Link",
-                    "name": "delete",
-                    "value": index + '-' + items[i + index].linkid,
-                    "style": "danger",
-                    "type": "button",
-                    "confirm": {
-                      "title": "Confirm",
-                      "text": "Are you sure you want to delete " + link.shortUrl + "?",
-                      "ok_text": "Yes",
-                      "dismiss_text": "No"
-                    }
-                  }]
-                })
-                looper(i + 1);
-              }
-            });
+          function looper(i) {
+            if (i < linksPerPage && i + index < items.length) {
+              linkGet(items[i + index].linkid, function(err, link) {
+                  if (link == null) {
+                    looper(i + 1);
+                  } else {
+
+                    if (requestingUser == link.title) {
+                      reply.attachments.push({
+                        title: link.shortUrl,
+                        text: link.destination,
+                        callback_id: requestingUser,
+                        color: "#024DA1",
+                        attachment_type: 'default',
+                        actions: [{
+                          "name": "stats",
+                          "text": "Get Stats",
+                          "value": link.integration.link + '-' + link.shortUrl + '-' + index + '-' + link.id + '-' + link.destination,
+                          "type": "button",
+                        }, {
+                          "text": "Delete Link",
+                          "name": "delete",
+                          "value": index + '-' + link.id,
+                          "style": "danger",
+                          "type": "button",
+                          "confirm": {
+                            "title": "Confirm",
+                            "text": "Are you sure you want to delete " + link.shortUrl + "?",
+                            "ok_text": "Yes",
+                            "dismiss_text": "No"
+                          }
+                        }]
+                      })
+                    } else {
+                      reply.attachments.push({
+                          title: link.shortUrl,
+                          text: link.destination,
+                          callback_id: requestingUser,
+                          color: "#024DA1",
+                          attachment_type: 'default',
+                          actions: [{
+                              "name": "stats",
+                              "text": "Get Stats",
+                              "value": link.integration.link + '-' + link.shortUrl + '-' + index + '-' + link.id + '-' + link.destination,
+                              "type": "button",
+                            }
+                          ]
+                      })
+                  }
+                  looper(i + 1);
+                }
+              });
           } else {
             if (i + index < items.length && i > 1 && index > 0) {
               reply.attachments.push({
                 title: 'Show more links?',
-                callback_id: user,
+                callback_id: requestingUser,
                 color: "#AFD135",
                 attachment_type: 'default',
                 actions: [{
                   "name": "showMore",
                   "text": "Previous",
-                  "value": index - linksPerPage,
+                  "value": (index - linksPerPage) + '-' + user,
                   "type": "button",
                 }, {
                   "name": "showMore",
                   "text": "Next",
-                  "value": i + index,
+                  "value": (i + index) + '-' + user,
                   "type": "button",
                 }]
               })
             } else if (i + index < items.length) {
               reply.attachments.push({
                 title: 'Show more links?',
-                callback_id: user,
+                callback_id: requestingUser,
                 color: "#AFD135",
                 attachment_type: 'default',
                 actions: [{
                   "name": "showMore",
                   "text": "Next",
-                  "value": i + index,
+                  "value": (i + index) + '-' + user,
                   "type": "button",
                 }]
               })
             } else if (items.length > linksPerPage) {
               reply.attachments.push({
                 title: 'Show more links?',
-                callback_id: user,
+                callback_id: requestingUser,
                 color: "#AFD135",
                 attachment_type: 'default',
                 actions: [{
                   "name": "showMore",
                   "text": "Previous",
-                  "value": index - linksPerPage,
+                  "value": (index - linksPerPage) + '-' + user,
                   "type": "button",
                 }]
               })
@@ -1189,52 +1237,52 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
         looper(0);
       }
     });
-  }
+}
 
-  function findUserLinks(userid, callback) {
-    var items = []
-    linkCollection.find({
-      'userid': userid
-    }).toArray(function(err, items) {
-      if (items.length < 1) {
-        controller.log.error('Could not find db entries for userid ' + userid + ': ' + err);
-        callback(true, null);
-      } else {
-        callback(null, items);
-      }
-    });
-  }
+function findUserLinks(userid, callback) {
+  var items = []
+  linkCollection.find({
+    'userid': userid
+  }).toArray(function(err, items) {
+    if (items.length < 1) {
+      controller.log.error('Could not find db entries for userid ' + userid + ': ' + err);
+      callback(true, null);
+    } else {
+      callback(null, items);
+    }
+  });
+}
 
-  function linkDelete(id, callback) {
-    request({
-      uri: 'https://api.rebrandly.com/v1/links/' + id,
-      method: 'DELETE',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': process.env.REBRANDLY_API
-      }
-    }, function(err, response, body) {
-      if (!err && response.statusCode == 200) {
-        var link = JSON.parse(body);
-        linkCollection.remove({
-          'linkid': id
-        }, {
-          w: 1
-        }, function(err, result) {
-          if (!err) {
-            callback(null, link);
-          } else {
-            controller.log.error('Removing link entry from database failed: ' + err);
-            callback(true);
-          }
-        });
+function linkDelete(id, callback) {
+  request({
+    uri: 'https://api.rebrandly.com/v1/links/' + id,
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': process.env.REBRANDLY_API
+    }
+  }, function(err, response, body) {
+    if (!err && response.statusCode == 200) {
+      var link = JSON.parse(body);
+      linkCollection.remove({
+        'linkid': id
+      }, {
+        w: 1
+      }, function(err, result) {
+        if (!err) {
+          callback(null, link);
+        } else {
+          controller.log.error('Removing link entry from database failed: ' + err);
+          callback(true);
+        }
+      });
 
-      } else {
-        controller.log.error('Failed to delete link ' + id + ': ' + JSON.stringify(response));
-        callback(true);
-      }
-    });
-  }
+    } else {
+      controller.log.error('Failed to delete link ' + id + ': ' + JSON.stringify(response));
+      callback(true);
+    }
+  });
+}
 });
 
 function statsGet(id, callback) {
