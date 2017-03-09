@@ -461,7 +461,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
           });
         } else {
           controller.log.error('Failed to create short link http://ntnx.tips/' + slashId + ': ' + JSON.stringify(response));
-          bot.reply(message, '*Beep Boop!* Uh-oh, friend! I couldn\'t shorten your link! Most likely another user created a link with that Slashtag, you used a bogus link, or you got cute and tried to add :jonkohler: emojis!');
+          bot.reply(message, '*Beep Boop!* I couldn\'t shorten your link! Most likely another user created a link with that Slashtag, you used a bogus link, or you got cute and tried to add :jonkohler: emojis!');
         }
       })
     }
@@ -480,17 +480,21 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
         $gte: today.toISOString()
       }
     }).toArray(function(err, todayLinks) {
-      linkCollection.find({
+
+      linkCollection.count({
         'createdDate': {
           $gte: today.toISOString()
         }
-      }).toArray(function(err, weekLinks) {
-        linkCollection.find({
+      }, function(err, weekLinks) {
+
+        linkCollection.count({
           'createdDate': {
             $gte: today.toISOString()
           }
-        }).toArray(function(err, monthLinks) {
+        }, function(err, monthLinks) {
+
           linkCountGet(function(err, allLinks) {
+
             topCollection.findOne({
               'users': 'users'
             }, function(err, topUsers) {
@@ -524,31 +528,31 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
                 })
 
               }
-              if (weekLinks.length == 0) {
+              if (weekLinks == 0) {
                 reply.attachments.push({
                   title: "Past Week",
                   text: 'Yeah, it\'s been a slow week. :confused:',
                   color: "#024DA1"
                 })
               }
-              if (weekLinks.length > 0) {
+              if (weekLinks > 0) {
                 reply.attachments.push({
                   title: "Past Week",
-                  text: weekLinks.length + ' Shortened links',
+                  text: weekLinks + ' Shortened links',
                   color: "#024DA1"
                 })
               }
-              if (monthLinks.length == 0) {
+              if (monthLinks == 0) {
                 reply.attachments.push({
                   title: "Past Month",
                   text: 'Someone should probably tell <@matt> to stop paying the AWS bill to host me. :weary:',
                   color: "#024DA1"
                 })
               }
-              if (monthLinks.length > 0) {
+              if (monthLinks > 0) {
                 reply.attachments.push({
                   title: "Past Month",
-                  text: monthLinks.length + ' Shortened links',
+                  text: monthLinks + ' Shortened links',
                   color: "#024DA1"
                 })
               }
@@ -585,7 +589,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
 
     findUserLinks(message.user, function(err, items) {
       if (items == null) {
-        bot.reply(message, '*Beep Boop!* Uh-oh, friend! Looks like I can\'t find any of your links! If you\'re sure you\'ve created some, maybe go talk to <@matt>.')
+        bot.reply(message, '*Beep Boop!* Looks like I can\'t find any of your links!')
       } else {
         userStats = []
 
@@ -1186,7 +1190,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
 
     findUserLinks(user, function(err, items) {
       if (err || items.length == 0) {
-        reply = '*Beep Boop!* Uh-oh, friend! Looks like I can\'t find any of your links! If you\'re sure you\'ve created some, maybe go talk to <@matt>.'
+        reply = '*Beep Boop!* Looks like I can\'t find any links for <@' + user +'>!'
         controller.log.error('Failed to print link list for userid: ' + user);
         callback(true, reply);
       } else {
