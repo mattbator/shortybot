@@ -19,9 +19,12 @@ var request = require('request');
 
 var cron = require('node-cron');
 
-var linksPerPage = 4;
+var linksPerPage = 8;
 
 var monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+var ONE_DAY = 24 * 60 * 60 * 1000;
+var ONE_WEEK = 7 * 24 * 60 * 60 * 1000;
+var ONE_MONTH = 30 * 24 * 60 * 60 * 1000;
 
 var Botkit = require('./lib/Botkit.js');
 
@@ -338,6 +341,10 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
         title: "@shorty top",
         text: "Lists the global top 10 most popular ntnx.tips links - Updated every 2 hours",
         color: "#024DA1"
+      }, {
+        title: "@shorty activity",
+        text: "What I've been up to (apart from all the Zumba classes)",
+        color: "#024DA1"
       }]
     }
     bot.reply(message, reply);
@@ -442,7 +449,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
             'slashid': newLink.slashtag,
             'userid': message.user,
             'linkid': newLink.id,
-            'createdDate': now.getFullYear() + '-' + now.getMonth() + 1 + '-' + now.getDate()
+            'createdDate': now.toISOString()
           };
           linkCollection.insert(record, {
             w: 1
@@ -460,24 +467,108 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
     }
   });
 
-  controller.hears(['today-report'], 'direct_message,direct_mention,mention', function(bot, message) {
+  controller.hears(['activity'], 'direct_message,direct_mention,mention', function(bot, message) {
 
     var now = new Date();
-    var today = now.getFullYear() + '-' + now.getMonth() + 1 + '-' + now.getDate()
+    var today = new Date(now.getTime() - ONE_DAY);
+    var week = new Date(now.getTime() - ONE_WEEK);
+    var month = new Date(now.getTime() - ONE_MONTH);
+    var topUsersText = '';
 
     linkCollection.find({
-      'createdDate': today
-    }).toArray(function(err, items) {
-      if (items.length == 0) {
-        bot.reply(message, '*Beep Boop!* I must be putting the Slack in slacker because I haven\'t shortened *any* new links today!')
-        controller.log.error('Could not find db entries for createdDate ' + today);
-      } else {
-        var reply = 'I\'ve shortened ' + items.length + ' new links today!\n'
-        for (var i = 0; i < items.length; i++) {
-          reply += '\nhttp://ntnx.tips/' + items[i].slashid + ' - <@' + items[i].userid + '>'
-        }
-        bot.reply(message, reply)
+      'createdDate': {
+        $gte: today.toISOString()
       }
+    }).toArray(function(err, todayLinks) {
+      linkCollection.find({
+        'createdDate': {
+          $gte: today.toISOString()
+        }
+      }).toArray(function(err, weekLinks) {
+        linkCollection.find({
+          'createdDate': {
+            $gte: today.toISOString()
+          }
+        }).toArray(function(err, monthLinks) {
+          linkCountGet(function(err, allLinks) {
+            topCollection.findOne({
+              'users': 'users'
+            }, function(err, topUsers) {
+              if (topUsers == null) {
+                controller.log.error('Cannot find month top users in the db: ' + err);
+              } else {
+                for (var i = 0; i < topUsers.results.length; i++) {
+                  topUsersText += '\n<@' + topUsers.results[i]._id + '> - ' + topUsers.results[i].count + ' Shortened links'
+                }
+              }
+
+              var reply = {
+                attachments: [],
+              }
+              if (todayLinks.length == 0) {
+                reply.attachments.push({
+                  title: "Past 24 Hours",
+                  text: 'I must be putting the Slack in slacker because I haven\'t shortened *any* new links today!',
+                  color: "#024DA1"
+                })
+              }
+              if (todayLinks.length > 0) {
+                var todayText = 'I\'ve shortened ' + todayLinks.length + ' new links today!'
+                for (var i = 0; i < todayLinks.length; i++) {
+                  todayText += '\nhttp://ntnx.tips/' + todayLinks[i].slashid + ' - Created by <@' + todayLinks[i].userid + '>'
+                }
+                reply.attachments.push({
+                  title: "Past 24 Hours",
+                  text: todayText,
+                  color: "#024DA1"
+                })
+
+              }
+              if (weekLinks.length == 0) {
+                reply.attachments.push({
+                  title: "Past Week",
+                  text: 'Yeah, it\'s been a slow week. :confused:',
+                  color: "#024DA1"
+                })
+              }
+              if (weekLinks.length > 0) {
+                reply.attachments.push({
+                  title: "Past Week",
+                  text: weekLinks.length + ' Shortened links',
+                  color: "#024DA1"
+                })
+              }
+              if (monthLinks.length == 0) {
+                reply.attachments.push({
+                  title: "Past Month",
+                  text: 'Someone should probably tell <@matt> to stop paying the AWS bill to host me. :weary:',
+                  color: "#024DA1"
+                })
+              }
+              if (monthLinks.length > 0) {
+                reply.attachments.push({
+                  title: "Past Month",
+                  text: monthLinks.length + ' Shortened links',
+                  color: "#024DA1"
+                })
+              }
+              reply.attachments.push({
+                title: "All Time",
+                text: allLinks + ' Shortened links *and counting!* :smiley:',
+                color: "#024DA1"
+              })
+              if (topUsersText) {
+                reply.attachments.push({
+                  title: "Most Active Users",
+                  text: topUsersText,
+                  color: "#024DA1"
+                })
+              }
+              bot.reply(message, reply)
+            });
+          });
+        });
+      });
     });
   });
 
@@ -559,21 +650,21 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
               }
               if (todayText) {
                 reply.attachments.push({
-                  title: "Today",
+                  title: "Past 24 Hours",
                   text: todayText,
                   color: "#024DA1"
                 })
               }
               if (weekText) {
                 reply.attachments.push({
-                  title: "This Week",
+                  title: "Past Week",
                   text: weekText,
                   color: "#024DA1"
                 })
               }
               if (monthText) {
                 reply.attachments.push({
-                  title: "This Month",
+                  title: "Past Month",
                   text: monthText,
                   color: "#024DA1"
                 })
@@ -650,64 +741,44 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
               }
             }
 
-            topCollection.findOne({
-              'users': 'users'
-            }, function(err, topUsers) {
-              if (topUsers == null) {
-                controller.log.error('Cannot find month top users in the db: ' + err);
-              } else {
-                for (var i = 0; i < topUsers.results.length; i++) {
-                  topUsersText += '\n<@' + topUsers.results[i]._id + '> - ' + topUsers.results[i].count + ' Links Created'
-                }
+            if (allTimeText) {
+
+              var reply = {
+                text: 'Here are *the* most popular links:',
+                attachments: [],
               }
-
-              if (allTimeText) {
-
-                var reply = {
-                  text: 'Here are *the* most popular links:',
-                  attachments: [],
-                }
-                if (todayText) {
-                  reply.attachments.push({
-                    title: "Today",
-                    text: todayText,
-                    color: "#024DA1"
-                  })
-                }
-                if (weekText) {
-                  reply.attachments.push({
-                    title: "This Week",
-                    text: weekText,
-                    color: "#024DA1"
-                  })
-                }
-                if (monthText) {
-                  reply.attachments.push({
-                    title: "This Month",
-                    text: monthText,
-                    color: "#024DA1"
-                  })
-                }
+              if (todayText) {
                 reply.attachments.push({
-                  title: "All Time",
-                  text: allTimeText,
+                  title: "Past 24 Hours",
+                  text: todayText,
                   color: "#024DA1"
                 })
-                if (topUsersText) {
-                  reply.attachments.push({
-                    title: "Most Active Users",
-                    text: topUsersText,
-                    color: "#024DA1"
-                  })
-                }
-                bot.reply(message, reply)
               }
-            });
+              if (weekText) {
+                reply.attachments.push({
+                  title: "Past Week",
+                  text: weekText,
+                  color: "#024DA1"
+                })
+              }
+              if (monthText) {
+                reply.attachments.push({
+                  title: "Past Month",
+                  text: monthText,
+                  color: "#024DA1"
+                })
+              }
+              reply.attachments.push({
+                title: "All Time",
+                text: allTimeText,
+                color: "#024DA1"
+              })
+              bot.reply(message, reply)
+            }
           });
         });
       });
     });
-
   });
 
   /*controller.hears('^stop', 'direct_message', function(bot, message) {
@@ -875,19 +946,19 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
         }
         if (stats.analytics.allTime.shortUrlClicks > 0) {
           reply.attachments.push({
-            title: "This Month",
+            title: "Past Month",
             text: monthText,
             color: "#024DA1"
           }, {
-            title: "This Week",
+            title: "Past Week",
             text: weekText,
             color: "#024DA1"
           }, {
-            title: "Today",
+            title: "Past 24 Hours",
             text: dayText,
             color: "#024DA1"
           }, {
-            title: "Last Two Hours",
+            title: "Past 2 Hours",
             text: twoHourText,
             color: "#024DA1"
           })
@@ -1114,77 +1185,76 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
     var end = index + linksPerPage; //10
 
     findUserLinks(user, function(err, items) {
-        if (err || items.length == 0) {
-          reply = '*Beep Boop!* Uh-oh, friend! Looks like I can\'t find any of your links! If you\'re sure you\'ve created some, maybe go talk to <@matt>.'
-          controller.log.error('Failed to print link list for userid: ' + user);
-          callback(true, reply);
-        } else {
+      if (err || items.length == 0) {
+        reply = '*Beep Boop!* Uh-oh, friend! Looks like I can\'t find any of your links! If you\'re sure you\'ve created some, maybe go talk to <@matt>.'
+        controller.log.error('Failed to print link list for userid: ' + user);
+        callback(true, reply);
+      } else {
 
-          if (end > items.length) {
-            end = items.length //5
-          }
-          if (begin > items.length) {
-            index = begin - linksPerPage - 1
-            begin = index
-          }
+        if (end > items.length) {
+          end = items.length //5
+        }
+        if (begin > items.length) {
+          index = begin - linksPerPage - 1
+          begin = index
+        }
 
-          var reply = {
-            text: 'I\'ve shortened *' + items.length + '* links for <@' + user + '>!\nLinks ' + begin + ' - ' + end + ':',
-            attachments: [],
-          }
+        var reply = {
+          text: 'I\'ve shortened *' + items.length + '* links for <@' + user + '>!\nLinks ' + begin + ' - ' + end + ':',
+          attachments: [],
+        }
 
-          function looper(i) {
-            if (i < linksPerPage && i + index < items.length) {
-              linkGet(items[i + index].linkid, function(err, link) {
-                  if (link == null) {
-                    looper(i + 1);
-                  } else {
+        function looper(i) {
+          if (i < linksPerPage && i + index < items.length) {
+            linkGet(items[i + index].linkid, function(err, link) {
+              if (link == null) {
+                looper(i + 1);
+              } else {
 
-                    if (requestingUser == link.title) {
-                      reply.attachments.push({
-                        title: link.shortUrl,
-                        text: link.destination,
-                        callback_id: requestingUser,
-                        color: "#024DA1",
-                        attachment_type: 'default',
-                        actions: [{
-                          "name": "stats",
-                          "text": "Get Stats",
-                          "value": link.integration.link + '-' + link.shortUrl + '-' + index + '-' + link.id + '-' + link.destination,
-                          "type": "button",
-                        }, {
-                          "text": "Delete Link",
-                          "name": "delete",
-                          "value": index + '-' + link.id,
-                          "style": "danger",
-                          "type": "button",
-                          "confirm": {
-                            "title": "Confirm",
-                            "text": "Are you sure you want to delete " + link.shortUrl + "?",
-                            "ok_text": "Yes",
-                            "dismiss_text": "No"
-                          }
-                        }]
-                      })
-                    } else {
-                      reply.attachments.push({
-                          title: link.shortUrl,
-                          text: link.destination,
-                          callback_id: requestingUser,
-                          color: "#024DA1",
-                          attachment_type: 'default',
-                          actions: [{
-                              "name": "stats",
-                              "text": "Get Stats",
-                              "value": link.integration.link + '-' + link.shortUrl + '-' + index + '-' + link.id + '-' + link.destination,
-                              "type": "button",
-                            }
-                          ]
-                      })
-                  }
-                  looper(i + 1);
+                if (requestingUser == link.title) {
+                  reply.attachments.push({
+                    title: link.shortUrl,
+                    text: link.destination,
+                    callback_id: requestingUser,
+                    color: "#024DA1",
+                    attachment_type: 'default',
+                    actions: [{
+                      "name": "stats",
+                      "text": "Get Stats",
+                      "value": link.integration.link + '-' + link.shortUrl + '-' + index + '-' + link.id + '-' + link.destination,
+                      "type": "button",
+                    }, {
+                      "text": "Delete Link",
+                      "name": "delete",
+                      "value": index + '-' + link.id,
+                      "style": "danger",
+                      "type": "button",
+                      "confirm": {
+                        "title": "Confirm",
+                        "text": "Are you sure you want to delete " + link.shortUrl + "?",
+                        "ok_text": "Yes",
+                        "dismiss_text": "No"
+                      }
+                    }]
+                  })
+                } else {
+                  reply.attachments.push({
+                    title: link.shortUrl,
+                    text: link.destination,
+                    callback_id: requestingUser,
+                    color: "#024DA1",
+                    attachment_type: 'default',
+                    actions: [{
+                      "name": "stats",
+                      "text": "Get Stats",
+                      "value": link.integration.link + '-' + link.shortUrl + '-' + index + '-' + link.id + '-' + link.destination,
+                      "type": "button",
+                    }]
+                  })
                 }
-              });
+                looper(i + 1);
+              }
+            });
           } else {
             if (i + index < items.length && i > 1 && index > 0) {
               reply.attachments.push({
@@ -1237,52 +1307,52 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
         looper(0);
       }
     });
-}
+  }
 
-function findUserLinks(userid, callback) {
-  var items = []
-  linkCollection.find({
-    'userid': userid
-  }).toArray(function(err, items) {
-    if (items.length < 1) {
-      controller.log.error('Could not find db entries for userid ' + userid + ': ' + err);
-      callback(true, null);
-    } else {
-      callback(null, items);
-    }
-  });
-}
+  function findUserLinks(userid, callback) {
+    var items = []
+    linkCollection.find({
+      'userid': userid
+    }).toArray(function(err, items) {
+      if (items.length < 1) {
+        controller.log.error('Could not find db entries for userid ' + userid + ': ' + err);
+        callback(true, null);
+      } else {
+        callback(null, items);
+      }
+    });
+  }
 
-function linkDelete(id, callback) {
-  request({
-    uri: 'https://api.rebrandly.com/v1/links/' + id,
-    method: 'DELETE',
-    headers: {
-      'Content-Type': 'application/json',
-      'apikey': process.env.REBRANDLY_API
-    }
-  }, function(err, response, body) {
-    if (!err && response.statusCode == 200) {
-      var link = JSON.parse(body);
-      linkCollection.remove({
-        'linkid': id
-      }, {
-        w: 1
-      }, function(err, result) {
-        if (!err) {
-          callback(null, link);
-        } else {
-          controller.log.error('Removing link entry from database failed: ' + err);
-          callback(true);
-        }
-      });
+  function linkDelete(id, callback) {
+    request({
+      uri: 'https://api.rebrandly.com/v1/links/' + id,
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': process.env.REBRANDLY_API
+      }
+    }, function(err, response, body) {
+      if (!err && response.statusCode == 200) {
+        var link = JSON.parse(body);
+        linkCollection.remove({
+          'linkid': id
+        }, {
+          w: 1
+        }, function(err, result) {
+          if (!err) {
+            callback(null, link);
+          } else {
+            controller.log.error('Removing link entry from database failed: ' + err);
+            callback(true);
+          }
+        });
 
-    } else {
-      controller.log.error('Failed to delete link ' + id + ': ' + JSON.stringify(response));
-      callback(true);
-    }
-  });
-}
+      } else {
+        controller.log.error('Failed to delete link ' + id + ': ' + JSON.stringify(response));
+        callback(true);
+      }
+    });
+  }
 });
 
 function statsGet(id, callback) {
