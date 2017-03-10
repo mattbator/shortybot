@@ -230,6 +230,32 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
     bot.reply(message, reply);
   });
 
+    controller.hears(['langone','lenovo hx','lenovo'], 'direct_message,direct_mention,mention', function(bot, message) {
+    var reply = {
+      attachments: [{
+        fallback: "I just can't wait to be king!",
+        title: "I just can't wait to be king!",
+        title_link: "https://twitter.com/bethekinghx",
+        image_url: "http://i.giphy.com/tHhIdajZKWP8k.gif",
+        color: "#AFD135"
+      }]
+    }
+    bot.reply(message, reply);
+  });
+
+    controller.hears(['thank you'], 'direct_message,direct_mention,mention', function(bot, message) {
+    var reply = {
+      attachments: [{
+        fallback: "Thank you!",
+        title: "You bet!",
+        title_link: "http://giphy.com/search/thanks",
+        image_url: "http://i.giphy.com/pTOCbaHqijA1G.gif",
+        color: "#AFD135"
+      }]
+    }
+    bot.reply(message, reply);
+  });
+
   controller.hears(['get down'], 'direct_message,direct_mention,mention', function(bot, message) {
     var reply = {
       attachments: [{
@@ -330,8 +356,8 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
         text: "Interactive list all of the ntnx.tips links you\'ve created",
         color: "#024DA1"
       }, {
-        title: "@shorty list \'@someuser\'",
-        text: "Interactive list all of the ntnx.tips links that user has created",
+        title: "@shorty list \'@someUser\'",
+        text: "Interactive list all of the ntnx.tips links @someUser has created",
         color: "#024DA1"
       }, {
         title: "@shorty my top",
@@ -483,13 +509,13 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
 
       linkCollection.count({
         'createdDate': {
-          $gte: today.toISOString()
+          $gte: week.toISOString()
         }
       }, function(err, weekLinks) {
 
         linkCollection.count({
           'createdDate': {
-            $gte: today.toISOString()
+            $gte: month.toISOString()
           }
         }, function(err, monthLinks) {
 
@@ -563,7 +589,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
               })
               if (topUsersText) {
                 reply.attachments.push({
-                  title: "Most Active Users",
+                  title: "Most Active Users (Updated Every 2 Hours)",
                   text: topUsersText,
                   color: "#024DA1"
                 })
