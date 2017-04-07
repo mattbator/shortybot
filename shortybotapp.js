@@ -1348,6 +1348,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
         controller.log.error('Could not find db entries for userid ' + userid + ': ' + err);
         callback(true, null);
       } else {
+        items.reverse();
         callback(null, items);
       }
     });
