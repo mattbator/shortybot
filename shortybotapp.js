@@ -854,10 +854,10 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
 
     var key = primer ?
       function(x) {
-        return primer(x[field])
+        return primer(parseInt(x[field]))
       } :
       function(x) {
-        return x[field]
+        return parseInt(x[field])
       };
 
     reverse = !reverse ? 1 : -1;
