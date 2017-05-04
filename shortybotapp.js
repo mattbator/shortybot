@@ -441,6 +441,7 @@ mongoStorage.connect(process.env.MONGO_URI, function(err, db) {
     oldLink = oldLink.replace('>', '');
     oldLink = oldLink.replace('\'', '');
     oldLink = oldLink.replace('\"', '');
+    oldLink = oldLink.replace('&amp;', '&');
     oldLink = oldLink.split('|');
     oldLink = JSON.stringify(oldLink);
     var oldLinkObj = JSON.parse(oldLink);
